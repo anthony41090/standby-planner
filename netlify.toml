@@ -11,10 +11,13 @@
   to = "https://api.anthropic.com/:splat"
   status = 200
   force = true
+  # This header helps bypass some proxy-level Method Not Allowed errors
+  headers = {X-From = "Netlify"}
 
-# 2. Proxy for Gemini
 [[redirects]]
   from = "/api-gemini/*"
   to = "https://generativelanguage.googleapis.com/:splat"
   status = 200
   force = true
+  # Ensuring the key is passed for the new v1 endpoint
+  query = {key = ":key"}
