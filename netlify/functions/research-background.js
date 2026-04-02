@@ -3,7 +3,15 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 
 // Your Firebase config (Copy from your firebase-storage.js)
-const firebaseConfig = { /* ... */ };
+const firebaseConfig = {
+  apiKey: "AIzaSyCEU4w5t0BmOqAodkiv0YHqvmbxbvXsoKI",
+  authDomain: "standby-planner.firebaseapp.com",
+  databaseURL: "https://standby-planner-default-rtdb.firebaseio.com",
+  projectId: "standby-planner",
+  storageBucket: "standby-planner.firebasestorage.app",
+  messagingSenderId: "777289444892",
+  appId: "1:777289444892:web:458237c2c6db002eeef9d9"
+};
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
