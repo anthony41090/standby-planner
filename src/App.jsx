@@ -1368,25 +1368,23 @@ Return ONLY valid JSON — no markdown, no backticks, no preamble:
     let text = "";
     try {
       // 1. Try Claude First
-      const resp = await fetch("/api-anthropic/v1/messages", {
-        method: "POST",
-        headers: {
-  "Content-Type": "application/json",
-  "x-api-key": import.meta.env.VITE_ANTHROPIC_KEY,
-  "anthropic-version": "2023-06-01",
-  // ADD THIS LINE BELOW:
-  "anthropic-dangerous-direct-browser-access": "true" 
-},
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
+// This calls your "private room" instead of the public API
+const resp = await fetch("/.netlify/functions/research", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    prompt: prompt,
+    engine: "claude" // Tells the function to use the Claude logic
+  })
+});
+
+const data = await resp.json();
+// Since the function returns the whole response, 
+// make sure your logic below correctly reads 'data.content[0].text'
       
       if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-      const data = await resp.json();
       text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
       
       addLog("Claude Research complete — parsing...");
