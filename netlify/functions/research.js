@@ -1,27 +1,14 @@
 // netlify/functions/research.js
 export const handler = async (event) => {
-  console.log("--- Research Function Started ---");
-
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+  if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
 
   try {
     const { prompt, engine } = JSON.parse(event.body);
-    console.log(`Target Engine: ${engine}`);
-
-    // Standard Node.js access for Serverless Functions
     const key = engine === 'claude' 
       ? (process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY)
       : (process.env.VITE_GEMINI_KEY || process.env.GOOGLE_API_KEY);
 
-    if (!key || key === "undefined") {
-      console.error(`CRITICAL ERROR: Key for ${engine} is missing in the runtime environment.`);
-      return { 
-        statusCode: 500, 
-        body: JSON.stringify({ error: `API Key for ${engine} is not available at runtime.` }) 
-      };
-    }
+    if (!key) return { statusCode: 500, body: JSON.stringify({ error: "API Key Missing" }) };
 
     const url = engine === 'claude'
       ? "https://api.anthropic.com/v1/messages"
@@ -31,26 +18,29 @@ export const handler = async (event) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(engine === 'claude' && {
-          "x-api-key": key,
-          "anthropic-version": "2023-06-01"
-        })
+        ...(engine === 'claude' && { "x-api-key": key, "anthropic-version": "2023-06-01" })
       },
       body: JSON.stringify(
         engine === 'claude' 
         ? { 
-            model: "claude-3-5-sonnet-latest", 
-            max_tokens: 4000,
+            model: "claude-3-5-sonnet-20240620", // The most stable versioned ID
+            max_tokens: 4000, 
             messages: [{ role: "user", content: prompt }] 
           }
-        : { 
-            contents: [{ parts: [{ text: prompt }] }] 
-          }
-      )
-    }); // <--- THIS was the missing section causing all 9 errors
+        : { contents: [{ parts: [{ text: prompt }] }] }
+      ),
+    });
 
     const data = await response.json();
-    console.log(`--- ${engine.toUpperCase()} API Success ---`);
+
+    // ERROR PROTECTION: If the API returned an error, send a 400/500 status so App.jsx knows to fallback
+    if (data.error || (engine === 'claude' && data.type === "error")) {
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      };
+    }
 
     return {
       statusCode: 200,
@@ -59,10 +49,6 @@ export const handler = async (event) => {
     };
 
   } catch (error) {
-    console.error("Internal Function Error:", error.message);
-    return { 
-      statusCode: 500, 
-      body: JSON.stringify({ error: error.message }) 
-    };
+    return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
   }
 };

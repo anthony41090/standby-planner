@@ -1330,8 +1330,9 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
       "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"SEPARATE entries."}]
     }`;
 
-    addLog("Initiating Claude Research (Priority 1)...");
+  addLog("Initiating Claude Research (Priority 1)...");
     let text = "";
+    let parsed = null; // FIX: Declare 'parsed' here so it is available to the rest of the function
 
     try {
       // 1. PRIMARY ATTEMPT: CLAUDE
@@ -1343,7 +1344,7 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
 
       const data = await resp.json();
       
-      // LOGS FOR TROUBLESHOOTING IN BROWSER CONSOLE (F12)
+      // LOGS FOR TROUBLESHOOTING
       console.log("DEBUG: Claude Status:", resp.status);
       console.log("DEBUG: Claude Response Data:", data);
 
@@ -1352,11 +1353,11 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         addLog("Claude Research successful — parsing...");
       } else {
         // CLAUDE FAILED: Log error and move to Gemini
-        const errorDetail = data.error?.message || "Unknown Claude Error";
+        const errorDetail = (data.error && data.error.message) ? data.error.message : "Unknown Claude Error";
         console.error("CLAUDE FAILURE:", errorDetail);
         addLog(`Claude unavailable: ${errorDetail}. Switching to Gemini fallback...`);
 
-        // 2. SECONDARY ATTEMPT: GEMINI FALLBACK via Function
+        // 2. SECONDARY ATTEMPT: GEMINI FALLBACK
         const geminiResp = await fetch("/.netlify/functions/research", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1364,16 +1365,29 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         });
 
         const geminiData = await geminiResp.json();
+        console.log("DEBUG: Gemini Status:", geminiResp.status);
         console.log("DEBUG: Gemini Response Data:", geminiData);
 
-        if (!geminiResp.ok) throw new Error(geminiData.error || "Both Research Engines Failed.");
+        if (!geminiResp.ok) throw new Error("Both Research Engines Failed.");
 
-        // Parsing Gemini's specific JSON structure
+        // Parsing Gemini's specific structure
         text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
         addLog("Gemini Fallback successful — parsing...");
       }
 
       setStatus("parsing");
+
+      // --- NEW PARSING BLOCK ---
+      try {
+        const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+        const m = cleaned.match(/\{[\s\S]*\}/);
+        parsed = m ? JSON.parse(m[0]) : null;
+      } catch (e) {
+        console.error("JSON Parse Error:", e);
+        parsed = null;
+      }
+
+      if (!parsed) throw new Error("Could not extract valid route data from AI response.");
 
       (parsed.hub_routes||[]).forEach(hr=>{
         const trunk=hr.trunk_flight||{};
