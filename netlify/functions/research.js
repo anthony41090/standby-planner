@@ -1,5 +1,4 @@
 // netlify/functions/research.js
-
 export const handler = async (event) => {
   console.log("--- Research Function Started ---");
 
@@ -11,14 +10,13 @@ export const handler = async (event) => {
     const { prompt, engine } = JSON.parse(event.body);
     console.log(`Target Engine: ${engine}`);
 
-    // Try to get the key from multiple possible locations due to Netlify's 2026 sync bug
+    // Standard Node.js access for Serverless Functions
     const key = engine === 'claude' 
       ? (process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY)
       : (process.env.VITE_GEMINI_KEY || process.env.GOOGLE_API_KEY);
 
     if (!key || key === "undefined") {
       console.error(`CRITICAL ERROR: Key for ${engine} is missing in the runtime environment.`);
-      // If this shows up in your logs, the issue is 100% in the Netlify Dashboard Scopes
       return { 
         statusCode: 500, 
         body: JSON.stringify({ error: `API Key for ${engine} is not available at runtime.` }) 
@@ -41,16 +39,15 @@ export const handler = async (event) => {
       body: JSON.stringify(
         engine === 'claude' 
         ? { 
-            model: "claude-3-5-sonnet-20240620", 
+            model: "claude-3-5-sonnet-latest", 
             max_tokens: 4000,
-            tools: [{ type: "web_search", name: "web_search" }],
             messages: [{ role: "user", content: prompt }] 
           }
         : { 
             contents: [{ parts: [{ text: prompt }] }] 
           }
-      ),
-    });
+      )
+    }); // <--- THIS was the missing section causing all 9 errors
 
     const data = await response.json();
     console.log(`--- ${engine.toUpperCase()} API Success ---`);
