@@ -1331,140 +1331,108 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     }`;
 
   addLog("Initiating Claude Research (Priority 1)...");
-    let text = "";
-    let parsed = null; // FIX: Declare 'parsed' here so it is available to the rest of the function
+    let parsed = null;
 
     try {
-      // 1. PRIMARY ATTEMPT: CLAUDE
-      const resp = await fetch("/.netlify/functions/research", {
+      // 1. Trigger the Background Function
+      const resp = await fetch("/.netlify/functions/research-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt, engine: "claude" })
+        body: JSON.stringify({ 
+          prompt: prompt, 
+          engine: "claude",
+          userId: "anthony_alonso" 
+        })
       });
 
-      const data = await resp.json();
-      
-      // LOGS FOR TROUBLESHOOTING
-      console.log("DEBUG: Claude Status:", resp.status);
-      console.log("DEBUG: Claude Response Data:", data);
+      if (resp.status === 202) {
+        addLog("Research task started in background (bypass 60s timeout)...");
+        
+        // 2. Start Listening to Firebase for the result
+        const { doc, onSnapshot, getFirestore } = await import("firebase/firestore");
+        const db = getFirestore();
+        
+        const unsub = onSnapshot(doc(db, "research", "anthony_alonso"), (docSnap) => {
+          if (docSnap.exists() && docSnap.data().status === "complete") {
+            const backgroundData = docSnap.data().results;
+            addLog("Background research received! Parsing...");
+            
+            try {
+              const cleaned = backgroundData.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+              const m = cleaned.match(/\{[\s\S]*\}/);
+              parsed = m ? JSON.parse(m[0]) : null;
 
-      if (resp.ok && data.content && data.content.length > 0) {
-        text = data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
-        addLog("Claude Research successful — parsing...");
-      } else {
-        // CLAUDE FAILED: Log error and move to Gemini
-        const errorDetail = (data.error && data.error.message) ? data.error.message : "Unknown Claude Error";
-        console.error("CLAUDE FAILURE:", errorDetail);
-        addLog(`Claude unavailable: ${errorDetail}. Switching to Gemini fallback...`);
+              if (parsed) {
+                unsub(); // Stop listening
+                setStatus("parsing");
+                
+                const routes = [];
+                // Process Direct Flights
+                (parsed.direct_flights || []).forEach(f => {
+                  routes.push({ ...f, id: `r-${uid()}`, isDirect: true, cabinAvail: cabinJ ? "J" : "Y" });
+                });
 
-        // 2. SECONDARY ATTEMPT: GEMINI FALLBACK
-        const geminiResp = await fetch("/.netlify/functions/research", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: prompt, engine: "gemini" })
-        });
+                // Process Hub Routes
+                (parsed.hub_routes || []).forEach(hr => {
+                  const trunk = hr.trunk_flight || {};
+                  const trunkCode = trunk.airline || "??";
+                  const trunkPartner = AGREEMENTS[trunkCode];
+                  if (!trunkPartner) return;
+                  if (cabinJ && !trunkPartner.j) return;
 
-        const geminiData = await geminiResp.json();
-        console.log("DEBUG: Gemini Status:", geminiResp.status);
-        console.log("DEBUG: Gemini Response Data:", geminiData);
+                  const splitConns = [];
+                  (hr.connections || []).forEach(c => {
+                    const fn = c.flight_number || "";
+                    const slashParts = fn.split(/\s*[\/,]\s*/);
+                    if (slashParts.length > 1) {
+                      const airlineCode = c.airline || "??";
+                      slashParts.forEach(part => {
+                        const numMatch = part.match(/\d+/);
+                        if (numMatch) splitConns.push({ ...c, flight_number: `${airlineCode} ${numMatch[0]}`, airline: airlineCode });
+                      });
+                    } else {
+                      splitConns.push(c);
+                    }
+                  });
 
-        if (!geminiResp.ok) throw new Error("Both Research Engines Failed.");
+                  const conns = splitConns.filter(c => AGREEMENTS[c.airline]).map(c => {
+                    const cp = AGREEMENTS[c.airline];
+                    return {
+                      id: `c-${uid()}`,
+                      conn: `${cp?.name || c.airline} ${c.flight_number} → ${c.destination}`,
+                      fn: c.flight_number, cd: c.departure_time, ac: c.aircraft, at: c.arrival_time,
+                      apt: c.destination, airlineCode: c.airline, layoverHrs: c.layover_hrs, cabinAvail: cp?.j ? "J" : "Y"
+                    };
+                  });
 
-        // Parsing Gemini's specific structure
-        text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        addLog("Gemini Fallback successful — parsing...");
-      }
+                  routes.push({
+                    id: `r-${uid()}`, isDirect: false, trunkCarrier: trunkCode,
+                    fullFlightNum: trunk.flight_number, sfoDep: trunk.departure_time,
+                    hub: hr.hub_code, aircraft: trunk.aircraft,
+                    note: `Via ${hr.hub_name}${hr.hub_notes ? ` · ${hr.hub_notes}` : ""}`,
+                    connections: conns.length > 0 ? conns : []
+                  });
+                });
 
-      setStatus("parsing");
-
-      // --- NEW PARSING BLOCK ---
-      try {
-        const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-        const m = cleaned.match(/\{[\s\S]*\}/);
-        parsed = m ? JSON.parse(m[0]) : null;
-      } catch (e) {
-        console.error("JSON Parse Error:", e);
-        parsed = null;
-      }
-
-      if (!parsed) throw new Error("Could not extract valid route data from AI response.");
-
-      (parsed.hub_routes||[]).forEach(hr=>{
-        const trunk=hr.trunk_flight||{};
-        const trunkCode=trunk.airline||"??";
-        const trunkPartner=AGREEMENTS[trunkCode];
-        // SKIP trunk airlines we have NO agreement with
-        if (!trunkPartner) { addLog(`⚠ Skipped hub route via ${hr.hub_code} on ${trunkCode} — not a partner`); return; }
-        // When searching J class, trunk must be on a J-agreement airline
-        if (cabinJ && !trunkPartner.j) { addLog(`⚠ Skipped hub route via ${hr.hub_code} on ${trunkCode} — economy-only (no J class)`); return; }
-        const trunkCabin = trunkPartner.j ? "J" : "Y";
-
-        // Pre-process: split any grouped connections (e.g., "HA 50/51/52" → 3 entries)
-        const rawConns = hr.connections || [];
-        const splitConns = [];
-        rawConns.forEach(c => {
-          const fn = c.flight_number || "";
-          // Check for grouped flights: "HA 50/51/52" or "HA 50, HA 51" or "HA 50 / HA 51"
-          const slashParts = fn.split(/\s*[\/,]\s*/);
-          if (slashParts.length > 1) {
-            // Extract airline code from first part
-            const airlineMatch = slashParts[0].match(/^([A-Z]{2})\s*/);
-            const airlineCode = airlineMatch ? airlineMatch[1] : (c.airline || "??");
-            slashParts.forEach(part => {
-              const numMatch = part.match(/\d+/);
-              if (numMatch) {
-                const fullFn = part.match(/^[A-Z]{2}/) ? part : `${airlineCode} ${numMatch[0]}`;
-                splitConns.push({ ...c, flight_number: fullFn.trim(), airline: airlineCode });
+                setResults(routes);
+                setStatus("done");
+                if (onDone) onDone(routes);
+                addLog(`Success: Found ${routes.length} validated routes.`);
               }
-            });
-          } else {
-            splitConns.push(c);
+            } catch (parseErr) {
+              console.error("JSON Parse Error:", parseErr);
+              addLog("Error parsing AI results.");
+            }
           }
         });
-
-        // Filter connections to only partner airlines
-        const conns=splitConns.filter(c=>{
-          const cp=AGREEMENTS[c.airline];
-          if(!cp){ addLog(`⚠ Skipped connection ${c.airline} ${c.flight_number||"?"} — not a partner`); return false; }
-          return true;
-        }).map(c=>{
-          const cp=AGREEMENTS[c.airline];
-          const mct=AIRPORT_MCT[hr.hub_code];
-          return {
-            id:`c-${uid()}`,
-            conn:`${cp?.name||c.airline} ${c.flight_number} → ${c.destination}`,
-            fn:c.flight_number||"???",cd:c.departure_time||"??:??",ac:c.aircraft||"Unknown",at:c.arrival_time||"??:??",
-            apt:c.destination||trip.destination, el:true, elL:cp?.how||"MyIDTravel",
-            ov:false, airlineCode:c.airline||"??", layoverHrs:c.layover_hrs,
-            mctNote:mct?.note, cabinAvail:cp?.j?"J":"Y",
-          };
-        });
-        routes.push({
-          id:`r-${uid()}`, isDirect:false, isLate:false,
-          trunkCarrier:trunkCode,
-          sfoFlight:`${trunkCode} ${(trunk.flight_number||"???").replace(/^[A-Z]{2}\s*/,"")}`,
-          fullFlightNum:trunk.flight_number||"???",
-          sfoDep:trunk.departure_time||"??:??",
-          hub:hr.hub_code||"???",hubArr:`+${trunk.duration_hrs||"?"}h`,
-          aircraft:trunk.aircraft||"Unknown",
-          defaultJ:null, overnightHub:false,
-          note:`Via ${hr.hub_name||hr.hub_code}${hr.hub_notes?` · ${hr.hub_notes}`:""}${!trunkPartner.j&&cabinJ?" · ⚠ Economy only trunk":""}`,
-          cabinAvail:trunkCabin,
-          isHome:trunkPartner.home||false,
-          connections:conns.length>0?conns:[{id:`c-${uid()}`,conn:"No eligible connections — add manually",fn:"—",cd:"—",ac:"—",at:"—",apt:trip.destination,el:false,elL:"—",ov:false,airlineCode:"??"}],
-        });
-      });
-      addLog(`${routes.filter(r=>!r.isDirect).length} hub routing(s) (validated)`);
-
-      if(parsed.alt_origins?.length>0){
-        addLog(`Alt origins: ${parsed.alt_origins.map(a=>`${a.airport}: ${a.note}`).join("; ")}`);
+      } else {
+        throw new Error("Failed to trigger background task.");
       }
-      if(parsed.research_notes) addLog(`Notes: ${parsed.research_notes}`);
-      addLog(`✓ ${routes.length} total route groups ready`);
-      setStatus("done");
-      setTimeout(()=>onDone(routes),1200);
-    } catch(err){
-      setError(err.message); setStatus("error"); addLog(`✗ Error: ${err.message}`);
+    } catch (err) {
+      console.error("Research Error:", err.message);
+      setError(err.message);
+      setStatus("error");
+      addLog(`Error: ${err.message}`);
     }
   }
 
