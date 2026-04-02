@@ -8,19 +8,16 @@ export const handler = async (event) => {
 
   try {
     const { prompt, engine } = JSON.parse(event.body);
-    
-    // BUG FIX: Use Netlify.env.get() instead of process.env 
-    // This is the required method for Netlify Functions in 2026
+    console.log(`Target Engine: ${engine}`);
+
+    // Standard Node.js access for Serverless Functions
     const key = engine === 'claude' 
-      ? Netlify.env.get("VITE_ANTHROPIC_KEY") 
-      : Netlify.env.get("VITE_GEMINI_KEY");
+      ? process.env.VITE_ANTHROPIC_KEY 
+      : process.env.VITE_GEMINI_KEY;
 
     if (!key) {
-      console.error(`CRITICAL: Key for ${engine} not found in Netlify.env`);
-      return { 
-        statusCode: 500, 
-        body: JSON.stringify({ error: `Environment variable for ${engine} is missing.` }) 
-      };
+      console.error(`Error: API Key for ${engine} is missing in process.env`);
+      return { statusCode: 500, body: JSON.stringify({ error: "API Key Missing" }) };
     }
 
     const url = engine === 'claude'
@@ -41,7 +38,7 @@ export const handler = async (event) => {
         ? { 
             model: "claude-3-5-sonnet-20240620", 
             max_tokens: 4000,
-            // Keep your dashboard happy by requesting the full search tool
+            // Re-adding the tools so Claude can actually find your routes
             tools: [{ type: "web_search", name: "web_search" }],
             messages: [{ role: "user", content: prompt }] 
           }
@@ -52,8 +49,6 @@ export const handler = async (event) => {
     });
 
     const data = await response.json();
-    console.log("--- API Call Successful ---");
-
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
