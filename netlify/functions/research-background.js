@@ -17,10 +17,18 @@ const db = getFirestore(app);
 
 export const handler = async (event) => {
   const { prompt, userId } = JSON.parse(event.body);
-  const key = process.env.ANTHROPIC_API_KEY;
+
+  // UPDATED: Priority check for the variable name in your dashboard
+  const key = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
 
   try {
     console.log(`Research started for: ${userId}`);
+    
+    // Safety check to log if the key is missing before trying to use it
+    if (!key) {
+      console.error("CRITICAL ERROR: No Anthropic key found in environment variables (VITE_ANTHROPIC_KEY).");
+      throw new Error("Missing API Key");
+    }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -40,13 +48,11 @@ export const handler = async (event) => {
 
     const data = await response.json();
 
-    // --- SAFETY CHECK: Fixes the 'filter' error ---
     if (!data.content) {
-      console.error("Claude API Error:", data.error || data);
-      throw new Error(data.error?.message || "API returned an empty response.");
+      console.error("Claude API Error Detail:", data.error || data);
+      throw new Error(data.error?.message || "API returned no content");
     }
 
-    // Extract text blocks only (ignoring 'thinking' blocks)
     const text = data.content
       .filter(block => block.type === "text")
       .map(block => block.text)
@@ -62,7 +68,6 @@ export const handler = async (event) => {
 
   } catch (error) {
     console.error("Background Process Error:", error.message);
-    // Notify the UI so it stops the loading spinner
     await setDoc(doc(db, "research", userId), {
       status: "error",
       error: error.message
