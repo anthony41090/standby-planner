@@ -1,24 +1,9 @@
 # netlify.toml
 
-# Standard build settings
 [build]
   command = "npm run build"
   publish = "dist"
 
-# 1. Proxy for Claude
-[[redirects]]
-  from = "/api-anthropic/*"
-  to = "https://api.anthropic.com/:splat"
-  status = 200
-  force = true
-  # This header helps bypass some proxy-level Method Not Allowed errors
-  headers = {X-From = "Netlify", Connection = "keep-alive"}
-
-# 2. Proxy for Gemini
-[[redirects]]
-  from = "/api-gemini/*"
-  to = "https://generativelanguage.googleapis.com/:splat"
-  status = 200
-  force = true
-  # Note: We removed the 'query' line. Netlify automatically 
-  # passes your ?key=AIza... from the code to Google.
+# Remove all [[redirects]] blocks. 
+# Your App.jsx is now calling /.netlify/functions/research directly,
+# so you no longer need the /api-anthropic or /api-gemini proxies.
