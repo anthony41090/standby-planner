@@ -1365,18 +1365,54 @@ Return ONLY valid JSON — no markdown, no backticks, no preamble:
 
     addLog("Calling Claude API with web search…");
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,
-          tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:prompt}]})
+    let text = "";
+    try {
+      // 1. Try Claude First
+      const resp = await fetch("/api-anthropic/v1/messages", {
+        method: "POST",
+        headers: {
+  "Content-Type": "application/json",
+  "x-api-key": import.meta.env.VITE_ANTHROPIC_KEY,
+  "anthropic-version": "2023-06-01",
+  // ADD THIS LINE BELOW:
+  "anthropic-dangerous-direct-browser-access": "true" 
+},
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: prompt }]
+        })
       });
-      if(!resp.ok) throw new Error(`API ${resp.status}`);
+      
+      if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
       const data = await resp.json();
-      addLog("Research complete — parsing…");
+      text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+      
+      addLog("Claude Research complete — parsing...");
       setStatus("parsing");
 
-      const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    } catch (error) {
+      // 2. If Claude fails, automatically switch to Gemini
+      addLog("Claude unavailable. Switching to Gemini fallback...");
+      
+     const key = import.meta.env.VITE_GEMINI_KEY;
+// Using the updated 3.1 Flash model and v1 endpoint for 2026 stability
+const geminiResp = await fetch(`/api-gemini/v1/models/gemini-3.1-flash-lite-preview:generateContent?key=${key}`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }]
+  })
+});
+
+      if (!geminiResp.ok) throw new Error(`Gemini API ${geminiResp.status}`);
+      const geminiData = await geminiResp.json();
+      text = geminiData.candidates[0].content.parts[0].text;
+      
+      addLog("Gemini Research complete — parsing...");
+      setStatus("parsing");
+    }
       let parsed;
       try {
         const cleaned = text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
@@ -1928,4 +1964,4 @@ function RI({label,text,extra,warn,footer,alert}){
     {extra&&<div style={{fontSize:10,color:"#2563eb",marginTop:3}}>{extra}</div>}
     {footer&&<div style={{fontSize:10,color:"#9ca3af",marginTop:4,fontStyle:"italic"}}>{footer}</div>}
   </div>);
-}
+  }
