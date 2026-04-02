@@ -1397,8 +1397,8 @@ Return ONLY valid JSON — no markdown, no backticks, no preamble:
       addLog("Claude unavailable. Switching to Gemini fallback...");
       
      const key = import.meta.env.VITE_GEMINI_KEY;
-// Using the updated 3.1 Flash model and v1 endpoint for 2026 stability
-const geminiResp = await fetch(`/api-gemini/v1/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
+// Updated to the stable Gemini 2.0 Flash model for April 2026
+const geminiResp = await fetch(`/api-gemini/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({

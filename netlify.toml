@@ -12,12 +12,13 @@
   status = 200
   force = true
   # This header helps bypass some proxy-level Method Not Allowed errors
-  headers = {X-From = "Netlify"}
+  headers = {X-From = "Netlify", Connection = "keep-alive"}
 
+# 2. Proxy for Gemini
 [[redirects]]
   from = "/api-gemini/*"
   to = "https://generativelanguage.googleapis.com/:splat"
   status = 200
   force = true
-  # Ensuring the key is passed for the new v1 endpoint
-  query = {key = ":key"}
+  # Note: We removed the 'query' line. Netlify automatically 
+  # passes your ?key=AIza... from the code to Google.
