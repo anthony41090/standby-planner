@@ -1,9 +1,11 @@
-# netlify.toml
-
 [build]
   command = "npm run build"
   publish = "dist"
 
-# Remove all [[redirects]] blocks. 
-# Your App.jsx is now calling /.netlify/functions/research directly,
-# so you no longer need the /api-anthropic or /api-gemini proxies.
+[functions]
+  node_bundle = true
+
+[context.production.environment]
+  # This "passes" the variables into the background function environment
+  VITE_FIREBASE_API_KEY = "VITE_FIREBASE_API_KEY"
+  ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
