@@ -1313,142 +1313,67 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     const jPartnerList = trunkCarriers.filter(c=>AGREEMENTS[c]?.j).map(c=>`${c}`).join(", ");
     const yOnlyList = [...new Set([...trunkCarriers,...connCarriers])].filter(c=>AGREEMENTS[c]&&!AGREEMENTS[c].j).map(c=>`${c}`).join(", ");
 
-    const prompt = `You are a non-rev standby travel researcher for airline employees. Find flight routing options from ${originPromptStr} to ${trip.destination} ${dateStr}.
-
-The traveler is an ALASKA AIRLINES employee with ZED/MIBA standby agreements. They want ${cabinJ?"BUSINESS CLASS (J)":"ECONOMY (Y)"} on the trunk leg.
-${airlineConstraint}
-
-STRICT RULE — ONLY include airlines from these lists. If an airline is NOT listed here, do NOT include it in results even if it flies the route. No ZipAir, no Spring Japan, no Peach, no Jetstar Japan, no airlines outside these lists:
-
-BUSINESS CLASS (J) agreement airlines: ${jPartnerList}
-ECONOMY ONLY (Y) airlines — NO business class: ${yOnlyList}
-
-TRUNK LEG CARRIER${trunkFilter?"":"S"}: ${trunkNames}
-CONNECTION CARRIERS (economy): ${connNames}
-${routingHubInstructions}
-${!trunkFilter && hubNotes ? `\nHUB STRATEGY NOTES:\n${hubNotes}\n` : ""}
-RESEARCH TASKS:
-1. Find ALL ${trunkFilter?(AGREEMENTS[trunkFilter]?.name||trunkFilter):"trunk carrier"} flights from ${originPromptStr} to ${trip.destination} (or ALL airports serving that city/region)${trunkFilter?"":" — check EVERY airport (e.g., for Tokyo: both NRT and HND)"}. ONLY include airlines from the lists above. For each: airline code, flight number, departure time, arrival time, aircraft type, destination airport code, duration hours.
-
-2. For EACH routing hub${trunkFilter?` that ${trunkFilter} flies to from ${originPromptStr}`:""}, find: (a) the trunk flight details, AND (b) ALL viable same-day connecting flights from that hub to the destination on DIFFERENT airlines. Do NOT just list connections on the trunk carrier — search across ALL connection carriers listed above. For example, if the trunk is HA to HNL, connections should include HA flights AND UA flights AND any other partner airline flying HNL to the destination. Each individual flight MUST be its own separate entry in the connections array — never combine multiple flights into one entry. For each connection include: airline code, flight_number, departure_time, arrival_time, aircraft, destination airport, and layover_hrs from trunk arrival. Return up to 3 flights per airline operating that route. Prioritize by: shortest feasible layover (min 2 hrs intl), larger aircraft, home airlines (AS/HA) first, then J-agreement carriers, then Y-only carriers.
-
-3. Note any alternative US departure points with notably better options for ${trunkFilter||"this route"}.
-
-CRITICAL FORMAT RULES:
-- Each individual flight MUST be its own object in the connections array. NEVER combine "HA 50/51/52" into one entry — that must be 3 separate entries.
-- Search MULTIPLE airlines for connections, not just the trunk carrier. If trunk is HA to HNL, search HA AND UA AND any other partner flying HNL→destination.
-- Every connection entry needs: airline, flight_number, departure_time, arrival_time, aircraft, destination, layover_hrs
-
-Return ONLY valid JSON — no markdown, no backticks, no preamble:
-{
-  "direct_flights": [
-    {"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily"}
-  ],
-  "hub_routes": [
+    const prompt = `You are a non-rev standby travel researcher for airline employees.
+    Find flight routing options from ${originPromptStr} to ${trip.destination} ${dateStr}.
+    The traveler is an ALASKA AIRLINES employee with ZED/MIBA standby agreements.
+    They want ${cabinJ ? "BUSINESS CLASS (J)" : "ECONOMY (Y)"} on the trunk leg.
+    ${airlineConstraint}
+    STRICT RULE — ONLY include airlines from these lists:
+    BUSINESS CLASS (J) agreement airlines: ${jPartnerList}
+    ECONOMY ONLY (Y) airlines — NO business class: ${yOnlyList}
+    TRUNK LEG CARRIER${trunkFilter ? "" : "S"}: ${trunkNames}
+    CONNECTION CARRIERS (economy): ${connNames}
+    ${routingHubInstructions}
+    Return ONLY valid JSON:
     {
-      "hub_code":"HNL","hub_name":"Honolulu",
-      "trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},
-      "connections":[
-        {"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3},
-        {"airline":"HA","flight_number":"HA 831","departure_time":"18:00","arrival_time":"21:30+1","aircraft":"A330-200","destination":"HND","layover_hrs":4.5},
-        {"airline":"UA","flight_number":"UA 201","departure_time":"14:00","arrival_time":"17:30+1","aircraft":"B787-9","destination":"NRT","layover_hrs":0.5},
-        {"airline":"WN","flight_number":"WN 505","departure_time":"15:15","arrival_time":"18:00+1","aircraft":"B737-800","destination":"NRT","layover_hrs":1.75}
-      ],
-      "hub_notes":"IMPORTANT: each flight is a SEPARATE entry. Multiple airlines searched."
-    }
-  ],
-  "alt_origins": [
-    {"airport":"LAX","note":"reason"}
-  ],
-  "research_notes": "observations"
-}`;
+      "direct_flights": [{"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily"}],
+      "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"SEPARATE entries."}]
+    }`;
 
-    addLog("Calling Claude API with web search…");
-    try {
+    addLog("Initiating Claude Research (Priority 1)...");
     let text = "";
+
     try {
-      // 1. Try Claude First
-// This calls your "private room" instead of the public API
-const resp = await fetch("/.netlify/functions/research", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    prompt: prompt,
-    engine: "claude" // Tells the function to use the Claude logic
-  })
-});
-
-const data = await resp.json();
-// Since the function returns the whole response, 
-// make sure your logic below correctly reads 'data.content[0].text'
-      
-      if (!resp.ok) throw new Error(`Claude API ${resp.status}`);
-      text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-      
-      addLog("Claude Research complete — parsing...");
-      setStatus("parsing");
-
-    } catch (error) {
-      // 2. If Claude fails, automatically switch to Gemini
-      addLog("Claude unavailable. Switching to Gemini fallback...");
-      
-     const key = import.meta.env.VITE_GEMINI_KEY;
-// Updated to the stable Gemini 2.0 Flash model for April 2026
-const geminiResp = await fetch(`/api-gemini/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }]
-  })
-});
-
-      if (!geminiResp.ok) throw new Error(`Gemini API ${geminiResp.status}`);
-      const geminiData = await geminiResp.json();
-      text = geminiData.candidates[0].content.parts[0].text;
-      
-      addLog("Gemini Research complete — parsing...");
-      setStatus("parsing");
-    }
-      let parsed;
-      try {
-        const cleaned = text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
-        const m = cleaned.match(/\{[\s\S]*\}/);
-        parsed = m ? JSON.parse(m[0]) : null;
-      } catch(_){ parsed = null; }
-      if(!parsed) parsed = {direct_flights:[],hub_routes:[],research_notes:"Could not parse results. Add routes manually."};
-
-      // Convert to route objects — with validation against actual agreements
-      const routes = [];
-
-      (parsed.direct_flights||[]).forEach(df=>{
-        const code = df.airline||"??";
-        const partner = AGREEMENTS[code];
-        // SKIP airlines we have NO agreement with
-        if (!partner) { addLog(`⚠ Skipped ${code} ${df.flight_number||"?"} — not a ZED/MIBA partner`); return; }
-        // When searching J class, trunk must be on a J-agreement airline
-        if (cabinJ && !partner.j) { addLog(`⚠ Skipped ${code} ${df.flight_number||"?"} — economy-only agreement (no J class)`); return; }
-        // Determine actual cabin availability from our agreements (not what API claims)
-        const actualCabin = partner.j ? "J" : "Y";
-        const isEligible = true; // if in AGREEMENTS, we have at least economy
-        routes.push({
-          id:`r-${uid()}`, isDirect:true, isLate:false,
-          trunkCarrier:code,
-          sfoFlight:`${code} ${(df.flight_number||"???").replace(/^[A-Z]{2}\s*/,"")}`,
-          fullFlightNum:df.flight_number||"???",
-          sfoDep:df.departure_time||"??:??",
-          hub:df.destination||trip.destination,
-          hubArr:df.arrival_time||"??:??",
-          aircraft:df.aircraft||"Unknown",
-          defaultJ:null, overnightHub:false,
-          note:`Direct · ~${df.duration_hrs||"?"}h${df.frequency?` · ${df.frequency}`:""}${!partner.j&&cabinJ?" · ⚠ Economy only":""}`,
-          cabinAvail:actualCabin,
-          isHome:partner.home||false,
-          connections:[{id:`c-${uid()}`,conn:`DIRECT to ${df.destination||trip.destination}`,fn:"—",cd:"—",ac:df.aircraft||"Unknown",at:df.arrival_time||"??:??",apt:df.destination||trip.destination,el:isEligible,elL:partner.how||"MyIDTravel",ov:false,airlineCode:code,cabinAvail:actualCabin}],
-        });
+      // 1. PRIMARY ATTEMPT: CLAUDE
+      const resp = await fetch("/.netlify/functions/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompt, engine: "claude" })
       });
-      addLog(`${routes.filter(r=>r.isDirect).length} direct flight(s) (validated)`);
+
+      const data = await resp.json();
+      
+      // LOGS FOR TROUBLESHOOTING IN BROWSER CONSOLE (F12)
+      console.log("DEBUG: Claude Status:", resp.status);
+      console.log("DEBUG: Claude Response Data:", data);
+
+      if (resp.ok && data.content && data.content.length > 0) {
+        text = data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+        addLog("Claude Research successful — parsing...");
+      } else {
+        // CLAUDE FAILED: Log error and move to Gemini
+        const errorDetail = data.error?.message || "Unknown Claude Error";
+        console.error("CLAUDE FAILURE:", errorDetail);
+        addLog(`Claude unavailable: ${errorDetail}. Switching to Gemini fallback...`);
+
+        // 2. SECONDARY ATTEMPT: GEMINI FALLBACK via Function
+        const geminiResp = await fetch("/.netlify/functions/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: prompt, engine: "gemini" })
+        });
+
+        const geminiData = await geminiResp.json();
+        console.log("DEBUG: Gemini Response Data:", geminiData);
+
+        if (!geminiResp.ok) throw new Error(geminiData.error || "Both Research Engines Failed.");
+
+        // Parsing Gemini's specific JSON structure
+        text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        addLog("Gemini Fallback successful — parsing...");
+      }
+
+      setStatus("parsing");
 
       (parsed.hub_routes||[]).forEach(hr=>{
         const trunk=hr.trunk_flight||{};
