@@ -18,12 +18,12 @@ export const handler = async (event) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(engine === 'claude' && { "x-api-key": key, "anthropic-version": "2023-06-01" })
+        ...(engine === 'claude' && { "x-api-key": key, "anthropic-version": "2025-03-05" })
       },
       body: JSON.stringify(
         engine === 'claude' 
         ? { 
-            model: "claude-3-5-sonnet-20240620", // The most stable versioned ID
+            model: "claude-sonnet-4-20250514", // The most stable versioned ID
             max_tokens: 4000, 
             messages: [{ role: "user", content: prompt }] 
           }
