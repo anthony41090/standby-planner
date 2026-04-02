@@ -3,9 +3,11 @@
   publish = "dist"
 
 [functions]
-  node_bundle = true
+  # In 2026, node_bundle must be defined as an object
+  [functions.node_bundle]
+    node_bundler = "esbuild"
+    external_node_modules = ["firebase", "node-fetch"]
 
 [context.production.environment]
-  # This "passes" the variables into the background function environment
   VITE_FIREBASE_API_KEY = "VITE_FIREBASE_API_KEY"
   ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
