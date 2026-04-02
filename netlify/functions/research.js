@@ -22,22 +22,17 @@ export const handler = async (event) => {
         ...(engine === 'claude' && { 
           "x-api-key": key, 
           "anthropic-version": "2023-06-01",
-          // Required beta header for 2026 server tools
+          // Required beta for 2026 tool use
           "anthropic-beta": "token-efficient-tools-2025-02-19" 
         })
       },
       body: JSON.stringify(
         engine === 'claude' 
         ? { 
-            model: "claude-3-5-sonnet-20240620", 
+            // UPDATED: Upgraded to the stable 2026 model ID
+            model: "claude-sonnet-4-6", 
             max_tokens: 4000, 
-            tools: [
-              { 
-                // FIXED: Changed 'web_search' to the specific 2026 versioned type
-                type: "web_search_20260209", 
-                name: "web_search" 
-              }
-            ],
+            tools: [{ type: "web_search_20260209", name: "web_search" }],
             messages: [{ role: "user", content: prompt }] 
           }
         : { contents: [{ parts: [{ text: prompt }] }] }
@@ -48,18 +43,10 @@ export const handler = async (event) => {
 
     if (data.error || (engine === 'claude' && data.type === "error")) {
       console.error(`${engine.toUpperCase()} API Error:`, data.error);
-      return {
-        statusCode: 400,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-      };
+      return { statusCode: 400, body: JSON.stringify(data) };
     }
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    };
+    return { statusCode: 200, body: JSON.stringify(data) };
 
   } catch (error) {
     return { statusCode: 500, body: JSON.stringify({ error: error.message }) };
