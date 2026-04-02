@@ -1,0 +1,20 @@
+# netlify.toml
+
+# Standard build settings
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# 1. Proxy for Claude
+[[redirects]]
+  from = "/api-anthropic/*"
+  to = "https://api.anthropic.com/:splat"
+  status = 200
+  force = true
+
+# 2. Proxy for Gemini
+[[redirects]]
+  from = "/api-gemini/*"
+  to = "https://generativelanguage.googleapis.com/:splat"
+  status = 200
+  force = true
