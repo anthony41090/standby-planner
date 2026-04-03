@@ -21,12 +21,12 @@ exports.handler = async (event) => {
     const destArray = finalDestination.split(',').map(d => d.trim().toUpperCase());
     const hubArray = hubs ? hubs.split(',').map(h => h.trim().toUpperCase()) : [];
 
-    // Ensure a destination airport isn't mistakenly used as a "middle-man" hub
     const filteredHubs = hubArray.filter(h => !destArray.includes(h));
     
     const cleanFinalStr = destArray.join(',');
     const cleanHubStr = filteredHubs.join(',');
-    const allSearchTargets = [...new Set([...destArray, ...filteredHubs])].join(',');
+    const allSearchTargets = [...new Set([...destArray, ...filteredHubs])];
+    const allSearchTargetsStr = allSearchTargets.join(',');
 
     console.log(`Double-Hop Research: ${origin} -> [${cleanHubStr}] -> ${cleanFinalStr}`);
 
@@ -43,7 +43,7 @@ exports.handler = async (event) => {
     }
 
     // 3. FETCH DATA FROM SERPAPI
-    const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${allSearchTargets}&outbound_date=${date}&type=2&api_key=${serpKey}`;
+    const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${allSearchTargetsStr}&outbound_date=${date}&type=2&api_key=${serpKey}`;
     
     let trunkData = { best_flights: [], other_flights: [] };
     let connData = { best_flights: [], other_flights: [] };
@@ -58,49 +58,93 @@ exports.handler = async (event) => {
       trunkData = await trunkRes.json();
     }
 
-    // 4. ORIGIN & TRUNK FILTERING ONLY
-    // We no longer block LCCs, we just ensure the trunk flight is from the right origin and on the requested airline.
-    const filterTrunk = (flights) => {
-      const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
-      return (flights || []).filter(f => {
-        const flightObj = f.flights?.[0] || f;
-        const airlineInfo = flightObj.airline || f.airline || "";
-        const airline = airlineInfo.toUpperCase();
-        
-        // Strict Origin Check
-        const flightOrigin = (flightObj.departure_airport?.id || f.departure_airport?.id || "").toUpperCase();
-        if (flightOrigin && !allowedOrigins.includes(flightOrigin)) return false;
-        
-        // Strict Trunk Airline Check
-        if (trunkFilter && !airline.includes(trunkFilter.toUpperCase())) return false;
-        
-        return true; 
-      });
+    // 4. STRICT FILTERING & DATA MINIFICATION
+    const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
+
+    // Helper function to cleanly split "YYYY-MM-DD HH:MM"
+    const splitDateTime = (timeStr) => {
+      if (!timeStr) return { date: "", time: "" };
+      const parts = timeStr.split(' ');
+      return { date: parts[0] || "", time: parts[1] || timeStr };
+    };
+
+    // Strips away massive JSON bloat to prevent Claude from mixing up data (Token Contamination fix)
+    const minimizeFlight = (f) => {
+      const leg = f.flights?.[0] || f;
+      const depData = splitDateTime(leg.departure_airport?.time || f.departure_airport?.time);
+      const arrData = splitDateTime(leg.arrival_airport?.time || f.arrival_airport?.time);
+
+      return {
+        airline: leg.airline || f.airline || "",
+        flight_number: leg.flight_number || f.flight_number || "",
+        origin: (leg.departure_airport?.id || f.departure_airport?.id || "").toUpperCase(),
+        dest: (leg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
+        dep_date: depData.date,
+        dep_time: depData.time,
+        arr_date: arrData.date,
+        arr_time: arrData.time,
+        duration_mins: f.total_duration || leg.duration || "Unknown",
+        aircraft: leg.airplane || f.airplane || "Unknown"
+      };
+    };
+
+    const filterAndMinimizeTrunk = (flights) => {
+      return (flights || [])
+        .map(minimizeFlight)
+        .filter(f => {
+          if (!f.origin || !allowedOrigins.includes(f.origin)) return false;
+          if (!f.dest || !allSearchTargets.includes(f.dest)) return false;
+          
+          if (trunkFilter) {
+            const filter = trunkFilter.toUpperCase();
+            // Checks BOTH airline name ("UNITED") and flight number ("UA 35")
+            if (!f.airline.toUpperCase().includes(filter) && !f.flight_number.toUpperCase().includes(filter)) {
+              return false;
+            }
+          }
+          return true;
+        });
+    };
+
+    const filterAndMinimizeConnections = (flights) => {
+      return (flights || []).map(minimizeFlight);
     };
 
     const liveFlights = {
-      trunk_flights: filterTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 40),
-      connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])].slice(0, 100) // All connections pass through
+      trunk_flights: filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 40),
+      connection_flights: filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])]).slice(0, 100)
     };
 
     console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} strict trunk options.`);
 
-    // 5. THE OPTIMIZED SONNET 4.6 PROMPT
+    // CIRCUIT BREAKER: Stop hallucination if no data exists
+    if (liveFlights.trunk_flights.length === 0) {
+      console.log("CIRCUIT BREAKER: 0 trunk flights found. Aborting Claude to prevent hallucinations.");
+      await setDoc(doc(db, "research", userId), {
+        results: JSON.stringify({ direct_flights: [], hub_routes: [] }),
+        timestamp: new Date().toISOString(),
+        status: "complete"
+      });
+      return; 
+    }
+
+    // 5. THE ZERO-TOLERANCE SONNET 4.6 PROMPT
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
+    // We now pass the perfectly clean, minimized JSON directly
     const enhancedPrompt = prompt + `\n\n
     =========================================
-    LIVE DATA: ${origin} ➔ ${cleanFinalStr}
+    CLEAN LIVE DATA: ${origin} ➔ ${cleanFinalStr}
     =========================================
-    ${JSON.stringify(liveFlights).substring(0, 95000)}
+    ${JSON.stringify(liveFlights)}
     
     CRITICAL DATA INTEGRITY & EXTRACTION RULES:
-    1. MANDATORY DIRECT FLIGHTS: You MUST extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found in the data. This is your absolute highest priority.
-    2. STRICT ORIGIN: Every trunk flight MUST depart from: ${origin}. IGNORE flights departing from anywhere else.
-    3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections or use the word "varies".
-    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to all provided hubs (${cleanHubStr}).
-    5. STRICT AIRLINE & CABIN: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. LCC & NON-STANDBY AIRLINES: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. You may include them for connecting flights, but you MUST prioritize partner airlines first. If you do include one of these non-standby airlines, you MUST add a clear note in the 'notes' or 'hub_notes' field stating: "⚠️ [Airline Name] is not standby eligible (confirmed ticket required)."
+    1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights or using pre-trained knowledge. Every single flight number, airline, departure time, and arrival time you output MUST be a direct copy-paste from the CLEAN LIVE DATA provided above.
+    2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA.
+    3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections.
+    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to (${cleanHubStr}). IF A HUB HAS NO TRUNK FLIGHT IN THE LIVE DATA, SKIP IT.
+    5. STRICT AIRLINE: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
+    6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them for a highly efficient connection, you MUST add a note: "⚠️ [Airline Name] is not standby eligible (confirmed ticket required)."
     7. JSON ONLY: Return ONLY the structured JSON object.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
