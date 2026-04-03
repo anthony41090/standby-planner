@@ -21,8 +21,6 @@ export const handler = async (event) => {
     console.log(`Double-Hop Research started: ${origin} -> Hubs -> ${finalDestination}`);
 
     // --- 1. DYNAMIC CONNECTION DATE LOGIC ---
-    // Long-haul flights (Asia, Europe, Oceania) usually arrive the next calendar day.
-    // Short-haul (Domestic, Mexico, Canada) usually connect same-day.
     let connectionDate = date; 
     const longHaulRegions = ['NRT', 'HND', 'ICN', 'TPE', 'HKG', 'LHR', 'FRA', 'CDG', 'AMS', 'SYD', 'AKL', 'SIN', 'PEK', 'PVG'];
     
@@ -38,7 +36,6 @@ export const handler = async (event) => {
       console.log(`Short/Medium-haul detected. Routing connections for same-day: ${connectionDate}`);
     }
 
-    // If hubs exist, append them. Otherwise, just search the final destination.
     const trunkDestinations = hubs ? `${finalDestination},${hubs}` : finalDestination;
     const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${trunkDestinations}&outbound_date=${date}&type=2&api_key=${serpKey}`;
     
@@ -60,15 +57,17 @@ export const handler = async (event) => {
       trunkData = await trunkRes.json();
     }
 
-    // --- 2. ASYMMETRIC FILTERING (SCALABLE & SONNET-READY) ---
-    const majorTrunkCarriers = ["UA", "AS", "HA", "AA", "DL", "WN", "B6", "AC", "LH", "AF", "KL", "BA", "IB", "AY", "LX", "OS", "SQ", "NH", "JL", "CX", "KE", "OZ", "BR", "CI", "QR", "EY", "EK", "QF", "NZ", "VA", "ZG"];
+    // --- 2. SMART ASYMMETRIC FILTERING ---
+    // Includes both codes and partial names to handle varied SerpApi data formats
+    const majorTrunkCarriers = ["UA", "UNITED", "AS", "ALASKA", "HA", "HAWAIIAN", "AA", "AMERICAN", "DL", "DELTA", "JL", "JAPAN AIRLINES", "NH", "ANA", "ALL NIPPON", "ZG", "ZIPAIR", "AF", "AIR FRANCE", "LH", "LUFTHANSA", "BA", "BRITISH AIRWAYS"];
 
     const liveFlights = {
-      // TRUNK: Filtered to major partners to keep ocean-crossings relevant
       trunk_flights: [...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]
-        .filter(f => majorTrunkCarriers.includes(f.airline?.toUpperCase()))
+        .filter(f => {
+          const name = f.airline?.toUpperCase() || "";
+          return majorTrunkCarriers.some(carrier => name.includes(carrier));
+        })
         .slice(0, 15), 
-      // CONNECTIONS: Unfiltered to protect regional/niche carriers for short hops
       connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])]
         .slice(0, 40) 
     };
@@ -80,7 +79,6 @@ export const handler = async (event) => {
 
     console.log("Passing 2-stage live data to Claude (Sonnet 3.5)...");
     
-    // --- 3. DYNAMIC ROUTE-AGNOSTIC ENHANCED PROMPT ---
     const enhancedPrompt = prompt + `\n\n
     =========================================
     LIVE FLIGHT DATA: ${origin} ➔ ${finalDestination}
@@ -90,38 +88,5 @@ export const handler = async (event) => {
     FINAL EXTRACTION INSTRUCTIONS:
     1. SCOPE: Extract all valid flights departing from ${origin} and arriving at ${finalDestination}.
     2. HUB ROUTING: Identify logical routes that pass through these hubs: [${hubs}]. 
-    3. CONNECTION FLEXIBILITY: For the second leg (the connection), include ANY airline found in the data that completes the journey to ${finalDestination}.
-    4. DATA ROBUSTNESS: If "aircraft" or "duration_hrs" is missing, use placeholders (e.g., "Boeing", "2"). DO NOT discard the flight.
-    5. IATA CODES: Ensure all location fields use the 3-letter codes provided (e.g., ${origin}, ${finalDestination}, and the hubs).
-    `;
-
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": claudeKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022", 
-        max_tokens: 8192,
-        messages: [{ role: "user", content: enhancedPrompt }]
-      })
-    });
-
-    const claudeData = await claudeResponse.json();
-    const finalJsonText = claudeData.content[0].text;
-
-    await setDoc(doc(db, "research", userId), {
-      results: finalJsonText,
-      timestamp: new Date().toISOString(),
-      status: "complete"
-    });
-
-    console.log("SUCCESS: Double-Hop Results saved to Firebase.");
-
-  } catch (error) {
-    console.error("Background Process Error:", error.message);
-    await setDoc(doc(db, "research", userId), { status: "error", error: error.message });
-  }
-};
+    3. CONNECTION FLEXIBILITY: For the connection leg, include ANY airline found in the data.
+    4. DATA ROBUSTNESS: Use placeholders (e.g., "Boeing", "2
