@@ -36,18 +36,16 @@ export const handler = async (event) => {
         "Content-Type": "application/json",
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "token-efficient-tools-2025-02-19,fast-mode-2026-02-01" // Added fast-mode beta
+        "anthropic-beta": "token-efficient-tools-2025-02-19" // Removed the fast-mode beta
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
         max_tokens: 4000,
-        // NEW: Tell Claude to work faster
-        speed: "fast", 
+        // REMOVED: speed: "fast"
         tools: [{ type: "web_search_20260209", name: "web_search" }],
-        // OPTIMIZED PROMPT: Tell it to be concise
         messages: [{ 
           role: "user", 
-          content: prompt + " \n\nIMPORTANT: Focus only on the top 5 most reliable hub routes. Do not exceed 3 minutes of search time." 
+          content: prompt + " \n\nIMPORTANT: Focus only on the top 5 most reliable hub routes. Be concise to ensure a quick response." 
         }]
       })
     });
