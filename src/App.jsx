@@ -226,112 +226,65 @@ const Y_PARTNERS = Object.keys(AGREEMENTS);
 
 // ─── Detailed Airline Rules (expanded set) ───────────────────────────────────
 const AIRLINE_RULES = {
-  AS:{name:"Alaska Airlines",listingLabel:"★ Home airline — auto-listed",listingAlert:"green",
-    listingFull:"Home airline employee pass. Auto-listed. Highest standby priority of all options. List via Alaska employee portal. No ZED ticket needed.",
-    checkIn:"Alaska app, alaskaair.com, or kiosk. Check in up to 24 hrs before departure.",checkInApp:"Alaska Airlines App",
-    dress:"Neat, clean, presentable. No ripped/torn clothing. Standard employee non-rev dress code.",
-    warning:"Home airline = best standby priority. Always try AS/HA routes first before ZED partners.",
-    exclusions:"None — full network access as employee."},
-  HA:{name:"Hawaiian Airlines",listingLabel:"★ Home airline — auto-listed",listingAlert:"green",
-    listingFull:"Home airline employee pass (Alaska/Hawaiian merged). Auto-listed. Highest standby priority. Flies to NRT, HND, KIX, ICN, SYD, AKL, PPT and extensive Pacific network.",
-    checkIn:"Hawaiian Airlines app or hawaiianairlines.com. Check in up to 24 hrs before departure.",checkInApp:"Hawaiian Airlines App",
-    dress:"Neat, clean, presentable. Standard employee non-rev dress code.",
-    warning:"Home airline = best standby priority. HA has wide-body service to Japan (NRT/HND/KIX), Korea (ICN), Australia (SYD), New Zealand (AKL), and Tahiti (PPT) — all with J class on employee pass.",
-    exclusions:"None — full network access as employee."},
-  UA:{name:"United Airlines",listingLabel:"List at ticket purchase (ID90Travel)",listingAlert:"green",
-    listingFull:"Listing auto-created at ID90Travel purchase. Buy ≥48 hrs before dep. Changes: call ePass +1-866-359-3727.",
-    checkIn:"United app/united.com/kiosk up to 24 hrs before. Seats auto-cleared ~1 hr before intl dep.",checkInApp:"United App",
-    dress:"Relaxed — clean jeans/leggings OK. No midriff, holes, beach flip-flops.",
-    warning:"J clearance not guaranteed — UA uses SPA auto-clear. Download United app.",
-    exclusions:"Star Alliance codeshares; ferry/positioning flights."},
-  JL:{name:"Japan Airlines",listingLabel:"⚠ List 24 hrs before — MANDATORY",listingAlert:"red",
-    listingFull:"MANDATORY for ALL JL intl flights. Must list via myIDTravel ≥24 hrs before dep — no exceptions.",
-    checkIn:"3 hrs before dep. Gate: 40 min before.",checkInApp:null,
-    dress:"Smart casual — neat, clean, conservative.",
-    warning:"No oneworld benefits. No lounge, meals, upgrades, seat selection.",
-    exclusions:"All codeshares not operated by JL."},
-  NH:{name:"ANA",listingLabel:"Via myIDTravel at purchase",listingAlert:"green",
-    listingFull:"Booking via myIDTravel. Intl window opens 90 days out. RBD X for economy (May 2026+).",
-    checkIn:"ANA app / ana.co.jp.",checkInApp:"ANA App",
-    dress:"Business casual. No torn jeans, shorts, flip-flops, tank tops.",
-    warning:"Codeshares excluded. Only NH/NQ/EH operated flights.",
-    exclusions:"All codeshares operated by other carriers."},
-  KE:{name:"Korean Air",listingLabel:"Via myIDTravel — list in advance",listingAlert:"green",
-    listingFull:"List via myIDTravel as far in advance as possible.",
-    checkIn:"Report to KE standby counter at airport with ticket and ITR.",checkInApp:null,
-    dress:"Smart casual.",
-    warning:"Must physically report to KE counter. KE3001–3999, KE5000–7999 excluded.",
-    exclusions:"Codeshares KE3001–3999, KE5000–7999, KE1401–1440."},
-  OZ:{name:"Asiana Airlines",listingLabel:"⚠ List 24 hrs before — MANDATORY",listingAlert:"red",
-    listingFull:"MANDATORY — no listing = denied check-in. Auto-listed at myIDTravel purchase.",
-    checkIn:"Varies by airport — check flyasiana.com.",checkInApp:null,
-    dress:"Smart casual STRICTLY enforced. NO jeans, T-shirts, shorts, gym shoes.",
-    warning:"No listing = denied. Dress code strictly enforced.",
-    exclusions:"All codeshares not operated by Asiana."},
-  BR:{name:"EVA Air",listingLabel:"List 6 hrs before dep",listingAlert:"amber",
-    listingFull:"List ≥6 hrs before dep. Auto-listed if ticket stock starts with 695.",
-    checkIn:"EVA app (3 hrs to 60–80 min before). Present 1 hr before at counter.",checkInApp:"EVA Air App",
-    dress:"Smart casual — office-appropriate.",
-    warning:"No upgrades, special meals, or seat requests.",
-    exclusions:"Codeshares not operated by EVA."},
-  CI:{name:"China Airlines",listingLabel:"List 6 hrs before · RBD X",listingAlert:"amber",
-    listingFull:"List ≥6 hrs before via myIDTravel or CI reservations. RBD X required.",
-    checkIn:"⚠ Counter stops 20 min before counter close — arrive early.",checkInApp:null,
-    dress:"Smart casual strictly enforced.",
-    warning:"Check-in closes 20 min early. No through check-in.",
-    exclusions:"All codeshares not operated by CI."},
-  MU:{name:"China Eastern",listingLabel:"Auto-listed at purchase (ZED Low)",listingAlert:"green",
-    listingFull:"Auto-listed at myIDTravel purchase. ZED Low fare. No name/routing changes.",
-    checkIn:"Standard airport check-in.",checkInApp:null,dress:"Smart casual.",
-    warning:"No name/routing changes. Do NOT dispute CC charge.",exclusions:"Verify via myIDTravel."},
-  JX:{name:"Starlux Airlines",listingLabel:"Auto-listed at purchase (ZED Medium)",listingAlert:"green",
-    listingFull:"Auto-listed at myIDTravel purchase. ZED Medium fare (higher cost).",
-    checkIn:"Online: 48 hrs to 1 hr before. Counter: 3 hrs to 1 hr before.",checkInApp:"Starlux app",
-    dress:"Smart casual.",warning:"ZED Medium = higher ticket cost.",exclusions:"Verify via myIDTravel."},
-  IT:{name:"Tigerair Taiwan",listingLabel:"Auto-listed at purchase (ZED Low)",listingAlert:"green",
-    listingFull:"Auto-listed at myIDTravel purchase. ZED Low fare.",
-    checkIn:"Counter: 3 hrs to 40 min before. Online: 24 hrs to 60 min before.",checkInApp:null,
-    dress:"Smart casual.",warning:"No name/routing changes.",exclusions:"Verify via myIDTravel."},
-  QR:{name:"Qatar Airways",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Oneworld partner. DOH is a mega-hub.",
-    checkIn:"Qatar Airways app or qatarairways.com.",checkInApp:"Qatar Airways App",
-    dress:"Smart casual.",warning:"DOH hub excellent for connections. Check flyzed.info/QR.",exclusions:"Check flyzed.info."},
-  BA:{name:"British Airways",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Oneworld partner.",
-    checkIn:"British Airways app. T5 at LHR.",checkInApp:"British Airways App",
-    dress:"Smart casual for J cabin.",warning:"LHR T5 well-organized. Check flyzed.info/BA.",exclusions:"Check flyzed.info."},
-  AA:{name:"American Airlines",listingLabel:"See agreement",listingAlert:"amber",
-    listingFull:"See the agreement document. Oneworld partner.",
-    checkIn:"American Airlines app or aa.com.",checkInApp:"American Airlines App",
-    dress:"Business casual for J cabin.",warning:"Check specific agreement terms.",exclusions:"Check agreement."},
-  EY:{name:"Etihad Airways",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Non-alliance ZED partner.",
-    checkIn:"Etihad app.",checkInApp:"Etihad App",
-    dress:"Smart casual.",warning:"Non-alliance — verify current agreement status. Check regional stability.",exclusions:"Check myIDTravel."},
-  LH:{name:"Lufthansa",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Star Alliance partner.",
-    checkIn:"Lufthansa app.",checkInApp:"Lufthansa App",
-    dress:"Business casual for J cabin.",warning:"FRA mega-hub. Check flyzed.info/LH.",exclusions:"Check flyzed.info."},
-  AY:{name:"Finnair",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Oneworld partner. HEL is shortest Europe→Asia routing.",
-    checkIn:"Finnair app.",checkInApp:"Finnair App",
-    dress:"Smart casual.",warning:"HEL compact hub — fast connections. Check flyzed.info/AY.",exclusions:"Check flyzed.info."},
-  AC:{name:"Air Canada",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Star Alliance partner.",
-    checkIn:"Air Canada app.",checkInApp:"Air Canada App",
-    dress:"Business casual.",warning:"YVR good Pacific gateway. Check flyzed.info/AC.",exclusions:"Check flyzed.info."},
-  TK:{name:"Turkish Airlines",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Star Alliance. IST is a mega-hub.",
-    checkIn:"Turkish Airlines app.",checkInApp:"Turkish Airlines App",
-    dress:"Smart casual.",warning:"IST mega-hub — connects everywhere. Check flyzed.info/TK.",exclusions:"Check flyzed.info."},
-  EK:{name:"Emirates",listingLabel:"Via myIDTravel",listingAlert:"amber",
-    listingFull:"Book via myIDTravel. Strict rules.",
-    checkIn:"Emirates app.",checkInApp:"Emirates App",
-    dress:"Smart casual strictly enforced.",warning:"Very strict dress code. Check flyzed.info/EK.",exclusions:"Check flyzed.info."},
-  CX:{name:"Cathay Pacific",listingLabel:"Via myIDTravel",listingAlert:"green",
-    listingFull:"Book via myIDTravel. Oneworld partner.",
-    checkIn:"Cathay Pacific app.",checkInApp:"Cathay Pacific App",
-    dress:"Smart casual.",warning:"HKG excellent hub. Check flyzed.info/CX.",exclusions:"Check flyzed.info."},
+  // ✈️ HOME AIRLINE
+  "AS": { listingLabel: "List via ID90T", listingAlert: "low", checkIn: "App/Web allowed. Clear at gate.", dress: "Alaska Employee Casual. Neat, clean, no ripped clothing." },
+  "HA": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "App/Web allowed.", dress: "Aloha casual. Neat, clean." },
+
+  // 💎 STRICT ASIAN & TRANSPACIFIC CARRIERS (ECONOMY & BUSINESS)
+  "JL": { listingLabel: "STRICT: List 24h prior", listingAlert: "high", checkIn: "Counter check-in 3 hours prior. Strict gate closure.", dress: "Conservative smart casual. STRICT enforcement." },
+  "NH": { listingLabel: "STRICT: List 24h prior", listingAlert: "high", checkIn: "Counter check-in required. Extremely punctual.", dress: "Conservative smart casual. No shorts/sandals." },
+  "CX": { listingLabel: "List 48h prior", listingAlert: "medium", checkIn: "Kiosk/Web (-24h). Bag drop closes -80m.", dress: "Smart casual/Office wear. No jeans, t-shirts, or sneakers." },
+  "KE": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required on departure date.", dress: "Smart casual. Collared shirts preferred. No shorts." },
+  "OZ": { listingLabel: "List 24h prior", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual. No shorts or open-toed shoes." },
+  "BR": { listingLabel: "List 24h prior", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "CI": { listingLabel: "List 24h prior", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "SQ": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual. Strict premium cabin dress code." },
+  "QF": { listingLabel: "List via myIDTravel", listingAlert: "high", checkIn: "Counter check-in required.", dress: "Smart casual. STRICT: No denim, shorts, or athletic wear in premium." },
+  "NZ": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "App/Web allowed.", dress: "Neat casual. No ripped clothing or offensive logos." },
+  "FJ": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual. Neat attire required." },
+
+  // 🌍 MAJOR EUROPEAN & MIDDLE EASTERN CARRIERS
+  "BA": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual. STRICT: No jeans, sneakers, or t-shirts in premium." },
+  "LH": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "App/Web allowed. Strict gate punctuality.", dress: "Smart casual. Clean jeans OK. No athletic wear." },
+  "AF": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Web check-in allowed.", dress: "Smart casual. Neat appearance." },
+  "KL": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Web check-in allowed.", dress: "Smart casual." },
+  "VS": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual. Neat denim allowed." },
+  "EI": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Web check-in allowed.", dress: "Smart casual." },
+  "TK": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "QR": { listingLabel: "List via myIDTravel", listingAlert: "high", checkIn: "Counter check-in required. Strict document check.", dress: "Business casual STRICTLY enforced. Collared shirts. No jeans." },
+  "EY": { listingLabel: "List via myIDTravel", listingAlert: "high", checkIn: "Counter check-in required.", dress: "Business casual STRICTLY enforced. Shoulders/knees covered." },
+  "WY": { listingLabel: "List via myIDTravel", listingAlert: "high", checkIn: "Counter check-in required.", dress: "Business attire/Smart casual strictly enforced." },
+  "RJ": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual." },
+
+  // 🌎 MAJOR AMERICAS CARRIERS
+  "UA": { listingLabel: "List via ID90T", listingAlert: "low", checkIn: "App/Web allowed. Clear at gate.", dress: "Smart casual. No ripped jeans, flip flops, or extreme casual wear." },
+  "AA": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "App/Web allowed. Kiosk bag drop.", dress: "Smart casual. No ripped jeans or athletic wear." },
+  "AC": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "App/Web allowed. Counter check-in for bags.", dress: "Smart casual. Neat jeans permitted." },
+  "WS": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "App/Web allowed.", dress: "Smart casual." },
+  "AM": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "B6": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "App/Web allowed.", dress: "Smart casual." },
+
+  // ✈️ PREMIUM / BOUTIQUE CARRIERS
+  "B0": { listingLabel: "List via myIDTravel", listingAlert: "high", checkIn: "Counter check-in required. (All-business class)", dress: "Business casual STRICTLY enforced." },
+  "02": { listingLabel: "List via myIDTravel", listingAlert: "high", checkIn: "FBO/Private Terminal check-in.", dress: "Business casual strictly enforced." },
+  "XE": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in (Private terminal).", dress: "Smart casual." },
+
+  // 🇪🇺 OTHER EUROPEAN / REGIONAL
+  "AY": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Web check-in allowed.", dress: "Smart casual." },
+  "OS": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "App/Web allowed.", dress: "Smart casual." },
+  "LO": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "DE": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "EW": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "4Y": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in.", dress: "Smart casual." },
+  "N0": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "Z0": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+
+  // 🌐 OTHER GLOBAL
+  "PR": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual. No shorts, sandals, or sleeveless shirts." },
+  "VA": { listingLabel: "List via myIDTravel", listingAlert: "medium", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "BW": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." },
+  "MX": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "App/Web allowed.", dress: "Smart casual." },
+  "GL": { listingLabel: "List via myIDTravel", listingAlert: "low", checkIn: "Counter check-in required.", dress: "Smart casual." }
 };
 
 // ─── Airport & Hub Knowledge ─────────────────────────────────────────────────
@@ -1333,12 +1286,21 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
   addLog("Initiating Claude Research (Priority 1)...");
     let parsed = null;
 
+    // --- NEW: GRAB DYNAMIC HUBS ---
+    // Look at the region data and pull out just the 3-letter codes
+    let dynamicHubs = "";
+    if (matchedData && matchedData.routingHubs) {
+      dynamicHubs = matchedData.routingHubs.map(h => h.code).join(",");
+    }
+    // ------------------------------
+
     try {
       // 0. RESET FIREBASE SO WE DON'T READ OLD RESULTS
       const { doc, setDoc, onSnapshot, getFirestore } = await import("firebase/firestore");
       const db = getFirestore();
       // Wipe the old search and set status to processing
       await setDoc(doc(db, "research", "anthony_alonso"), { status: "processing", results: "" });
+      
       // 1. Trigger the Background Function
       const response = await fetch("/.netlify/functions/research-background", {
         method: "POST",
@@ -1346,9 +1308,9 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         body: JSON.stringify({ 
           prompt: prompt,
           userId: "anthony_alonso",
-          // This perfectly converts "SFO/OAK" -> "SFO,OAK" and "NRT/HND" -> "NRT,HND"
           origin: trip.origin.replace(/\//g, ","), 
-          destination: trip.destination.replace(/\//g, ","), 
+          finalDestination: trip.destination.replace(/\//g, ","), // <-- CHANGED from 'destination'
+          hubs: dynamicHubs, // <-- ADDED dynamic variable
           date: trip.travelDate
         })
       });
