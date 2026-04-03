@@ -198,6 +198,8 @@ exports.handler = async (event) => {
     5. STRICT AIRLINE: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
     6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them for a highly efficient connection, you MUST add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
     7. STRICT JSON FORMATTING: 
+       - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks (e.g., no \`\`\`json).
+       - Start your response exactly with the { character.
        - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
        - DO NOT leave trailing commas at the end of any objects or arrays.`;
 
@@ -211,11 +213,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
         max_tokens: 8192,
-        messages: [
-          { role: "user", content: enhancedPrompt },
-          // THE MAGIC JSON FORCER: Forces Claude to bypass conversational text
-          { role: "assistant", content: "{" } 
-        ]
+        messages: [{ role: "user", content: enhancedPrompt }] // <-- Reverted to single user message
       })
     });
 
@@ -224,11 +222,8 @@ exports.handler = async (event) => {
     if (claudeData.error) throw new Error(`Claude API: ${claudeData.error.message}`);
     if (!claudeData.content?.[0]) throw new Error("Claude Data Missing");
 
-    // Since we forced Claude to start with "{", it omits it from the output. We just glue it back on!
-    const finalJsonString = "{" + claudeData.content[0].text;
-
     await setDoc(doc(db, "research", userId), {
-      results: finalJsonString,
+      results: claudeData.content[0].text, // <-- Reverted string concatenation
       timestamp: new Date().toISOString(),
       status: "complete"
     });
