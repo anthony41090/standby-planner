@@ -13,6 +13,67 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 // Alaska Airlines ZED/MIBA · Full agreement database · Any origin → Any dest
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── Global Research Hubs & Geo-Data ──────────────────────────────────────
+// Comprehensive list of major international gateways for all partner alliances
+const MAJOR_GLOBAL_HUBS = [
+  // North America
+  "JFK", "EWR", "ORD", "SFO", "LAX", "DFW", "ATL", "MIA", "IAD", "DEN", "SEA", "IAH", "BOS", "PHX", "YVR", "YYZ", "MEX",
+  // Europe
+  "FRA", "MUC", "LHR", "CDG", "AMS", "MAD", "ZRH", "IST", "CPH", "DUB", "VIE", "FCO", "BCN", "HEL", "OSL", "ARN",
+  // Asia (including China & India)
+  "HND", "NRT", "ICN", "TPE", "HKG", "SIN", "BKK", "PEK", "PKX", "PVG", "CAN", "SZX", "KMG", "DEL", "BOM", "KUL", "MNL", "KIX", "ITM",
+  // Middle East & Africa
+  "DXB", "DOH", "AUH", "JNB", "ADD", "CAI",
+  // South America & Oceania
+  "GRU", "SCL", "BOG", "SYD", "AKL", "MEL", "BNE"
+];
+
+// Reference coordinates for the 4-hour proximity filter
+const HUB_COORDINATES = {
+  // --- North America ---
+  "JFK": { lat: 40.641, lon: -73.778 }, "EWR": { lat: 40.689, lon: -74.174 }, "ORD": { lat: 41.974, lon: -87.907 },
+  "SFO": { lat: 37.621, lon: -122.378 }, "LAX": { lat: 33.941, lon: -118.408 }, "DFW": { lat: 32.899, lon: -97.040 },
+  "ATL": { lat: 33.640, lon: -84.427 }, "MIA": { lat: 25.795, lon: -80.287 }, "IAD": { lat: 38.944, lon: -77.456 },
+  "DEN": { lat: 39.856, lon: -104.673 }, "SEA": { lat: 47.450, lon: -122.308 }, "IAH": { lat: 29.990, lon: -95.336 },
+  "BOS": { lat: 42.365, lon: -71.009 }, "PHX": { lat: 33.434, lon: -112.008 }, "YVR": { lat: 49.196, lon: -123.181 },
+  "YYZ": { lat: 43.677, lon: -79.624 }, "MEX": { lat: 19.436, lon: -99.072 },
+
+  // --- Europe ---
+  "FRA": { lat: 50.033, lon: 8.570 }, "MUC": { lat: 48.353, lon: 11.775 }, "LHR": { lat: 51.470, lon: -0.454 },
+  "CDG": { lat: 49.009, lon: 2.547 }, "AMS": { lat: 52.310, lon: 4.768 }, "MAD": { lat: 40.491, lon: -3.567 },
+  "ZRH": { lat: 47.458, lon: 8.548 }, "IST": { lat: 41.275, lon: 28.751 }, "CPH": { lat: 55.618, lon: 12.650 },
+  "DUB": { lat: 53.426, lon: -6.249 }, "VIE": { lat: 48.110, lon: 16.569 }, "FCO": { lat: 41.800, lon: 12.238 },
+  "BCN": { lat: 41.297, lon: 2.083 }, "HEL": { lat: 60.317, lon: 24.963 }, "OSL": { lat: 60.197, lon: 11.100 },
+  "ARN": { lat: 59.651, lon: 17.918 },
+
+  // --- Asia & Pacific ---
+  "HND": { lat: 35.549, lon: 139.779 }, "NRT": { lat: 35.772, lon: 140.392 }, "ICN": { lat: 37.460, lon: 126.440 },
+  "TPE": { lat: 25.079, lon: 121.234 }, "HKG": { lat: 22.308, lon: 113.918 }, "SIN": { lat: 1.364, lon: 103.991 },
+  "BKK": { lat: 13.690, lon: 100.750 }, "PEK": { lat: 40.079, lon: 116.603 }, "PKX": { lat: 39.509, lon: 116.410 },
+  "PVG": { lat: 31.144, lon: 121.805 }, "CAN": { lat: 23.392, lon: 113.299 }, "SZX": { lat: 22.639, lon: 113.810 },
+  "KMG": { lat: 25.101, lon: 102.929 }, "DEL": { lat: 28.556, lon: 77.100 }, "BOM": { lat: 19.089, lon: 72.867 },
+  "KUL": { lat: 2.745, lon: 101.709 }, "MNL": { lat: 14.508, lon: 121.019 }, "KIX": { lat: 34.434, lon: 135.232 },
+  "ITM": { lat: 34.785, lon: 135.438 },
+
+  // --- Middle East & Africa ---
+  "DXB": { lat: 25.253, lon: 55.365 }, "DOH": { lat: 25.273, lon: 51.608 }, "AUH": { lat: 24.433, lon: 54.651 },
+  "JNB": { lat: -26.139, lon: 28.246 }, "ADD": { lat: 8.977, lon: 38.799 }, "CAI": { lat: 30.121, lon: 31.405 },
+
+  // --- South America & Oceania ---
+  "GRU": { lat: -23.435, lon: -46.473 }, "SCL": { lat: -33.393, lon: -70.785 }, "BOG": { lat: 4.701, lon: -74.146 },
+  "SYD": { lat: -33.939, lon: 151.175 }, "AKL": { lat: -37.008, lon: 174.785 }, "MEL": { lat: -37.669, lon: 144.841 },
+  "BNE": { lat: -27.384, lon: 153.117 }
+};
+
+// Helper: Haversine distance formula
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 3958.8; // Earth radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 // ─── Complete Agreement Database ─────────────────────────────────────────────
 // J = Business class ZED agreement | Y = Economy only | null = not a partner
 const AGREEMENTS = {
@@ -1277,22 +1338,43 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     TRUNK LEG CARRIER${trunkFilter ? "" : "S"}: ${trunkNames}
     CONNECTION CARRIERS (economy): ${connNames}
     ${routingHubInstructions}
+    
+    // --- ADDED LENGTH CONSTRAINTS ---
+    STRICT LIMIT: Provide a maximum of 12 total routing options across direct and hub routes.
+    Keep 'notes' and 'hub_notes' extremely concise (under 100 characters). 
+    Do NOT repeat information. If the data is too large, prioritize the most time-efficient routes.
+    
     Return ONLY valid JSON:
     {
-      "direct_flights": [{"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily"}],
-      "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"SEPARATE entries."}]
+      "direct_flights": [{"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily","notes":"Direct flagship service."}],
+      "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"Quick connection via HNL."}]
     }`;
 
   addLog("Initiating Claude Research (Priority 1)...");
     let parsed = null;
 
-    // --- NEW: GRAB DYNAMIC HUBS ---
-    // Look at the region data and pull out just the 3-letter codes
-    let dynamicHubs = "";
-    if (matchedData && matchedData.routingHubs) {
-      dynamicHubs = matchedData.routingHubs.map(h => h.code).join(",");
+   // --- NEW: DYNAMIC PROXIMITY HUBS ---
+    const cityToCode = { "TOKYO": "HND", "LONDON": "LHR", "PARIS": "CDG", "NEW YORK": "JFK" };
+    const inputCity = trip.destination.split(",")[0].trim().toUpperCase();
+    const searchCode = (trip.destCodes && trip.destCodes.length > 0) ? trip.destCodes[0] : (cityToCode[inputCity] || inputCity);
+
+    const destCoords = HUB_COORDINATES[searchCode];
+    let hubArray = [];
+
+    if (destCoords) {
+      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
+        if (hub === searchCode) return false;
+        const hCoords = HUB_COORDINATES[hub];
+        if (!hCoords) return false;
+        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 2200; 
+      }).slice(0, 12);
+      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${searchCode}.`);
+    } else {
+      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
+      addLog(`Coordinates unknown for ${searchCode}. Using global fallbacks.`);
     }
-    // ------------------------------
+    const dynamicHubs = hubArray.join(",");
+    // -----------------------------------
 
     try {
       // 1. CLEAR THE DATABASE FIRST (Deep Reset)

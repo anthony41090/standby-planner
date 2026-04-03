@@ -80,7 +80,7 @@ export const handler = async (event) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
-        max_tokens: 4000,
+        max_tokens: 8192,
         messages: [{ role: "user", content: enhancedPrompt }]
       })
     });
