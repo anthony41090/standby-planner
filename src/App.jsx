@@ -1360,47 +1360,46 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
                   routes.push({ ...f, id: `r-${uid()}`, isDirect: true, cabinAvail: cabinJ ? "J" : "Y" });
                 });
 
-                // Process Hub Routes
-                (parsed.hub_routes || []).forEach(hr => {
-                  const trunk = hr.trunk_flight || {};
-                  const trunkCode = trunk.airline || "??";
-                  const trunkPartner = AGREEMENTS[trunkCode];
-                  if (!trunkPartner) return;
-                  if (cabinJ && !trunkPartner.j) return;
+              // Process Hub Routes
+(parsed.hub_routes || []).forEach((hr) => {
+  // Claude sometimes puts the data at the top level or inside 'trunk_flight'
+  const trunk = hr.trunk_flight || hr;
+  const trunkCode = trunk.airline || hr.airline || "??";
 
-                  const splitConns = [];
-                  (hr.connections || []).forEach(c => {
-                    const fn = c.flight_number || "";
-                    const slashParts = fn.split(/\s*[\/,]\s*/);
-                    if (slashParts.length > 1) {
-                      const airlineCode = c.airline || "??";
-                      slashParts.forEach(part => {
-                        const numMatch = part.match(/\d+/);
-                        if (numMatch) splitConns.push({ ...c, flight_number: `${airlineCode} ${numMatch[0]}`, airline: airlineCode });
-                      });
-                    } else {
-                      splitConns.push(c);
-                    }
-                  });
+  // Validate the code against your AGREEMENTS dictionary
+  const trunkPartner = AGREEMENTS[trunkCode];
+  
+  // If we don't have an agreement, skip it; otherwise, process connections
+  if (!trunkPartner) return;
 
-                  const conns = splitConns.filter(c => AGREEMENTS[c.airline]).map(c => {
-                    const cp = AGREEMENTS[c.airline];
-                    return {
-                      id: `c-${uid()}`,
-                      conn: `${cp?.name || c.airline} ${c.flight_number} → ${c.destination}`,
-                      fn: c.flight_number, cd: c.departure_time, ac: c.aircraft, at: c.arrival_time,
-                      apt: c.destination, airlineCode: c.airline, layoverHrs: c.layover_hrs, cabinAvail: cp?.j ? "J" : "Y"
-                    };
-                  });
+  const conns = (hr.connections || []).map((c) => {
+    const cp = AGREEMENTS[c.airline];
+    return {
+      id: `c-${uid()}`,
+      conn: `${cp?.name || c.airline} ${c.flight_number} → ${c.destination}`,
+      fn: c.flight_number,
+      cd: c.departure_time,
+      ac: c.aircraft,
+      at: c.arrival_time,
+      apt: c.destination,
+      airlineCode: c.airline,
+      layoverHrs: c.layover_hrs,
+      cabinAvail: cp?.j ? "J" : "Y",
+    };
+  });
 
-                  routes.push({
-                    id: `r-${uid()}`, isDirect: false, trunkCarrier: trunkCode,
-                    fullFlightNum: trunk.flight_number, sfoDep: trunk.departure_time,
-                    hub: hr.hub_code, aircraft: trunk.aircraft,
-                    note: `Via ${hr.hub_name}${hr.hub_notes ? ` · ${hr.hub_notes}` : ""}`,
-                    connections: conns.length > 0 ? conns : []
-                  });
-                });
+  routes.push({
+    id: `r-${uid()}`,
+    isDirect: false,
+    trunkCarrier: trunkCode,
+    fullFlightNum: trunk.flight_number,
+    sfoDep: trunk.departure_time,
+    hub: hr.hub_code,
+    aircraft: trunk.aircraft,
+    note: `Via ${hr.hub_name}${hr.hub_notes ? ` · ${hr.hub_notes}` : ""}`,
+    connections: conns,
+  });
+});
 
                 setStatus("done");
                 if (onDone) onDone(routes);
@@ -1626,30 +1625,39 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
     {view==="checklist"&&(<div>
       {daysUntil!==null&&<div style={{padding:"12px 16px",background:daysUntil<=1?"#fef2f2":daysUntil<=3?"#fffbeb":"#f0fdf4",border:"1px solid "+(daysUntil<=1?"#fca5a5":daysUntil<=3?"#fcd34d":"#86efac"),borderRadius:10,marginBottom:14,fontSize:13,fontWeight:600,color:daysUntil<=1?"#991b1b":daysUntil<=3?"#78350f":"#065f46"}}>{daysUntil<=0?"⚠ Travel day is today or has passed!":daysUntil===1?"⚠ Travel is TOMORROW!":`Travel in ${daysUntil} days — ${trip.travelDate}`}</div>}
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {enriched.map(r=>{const a=AGREEMENTS[r.trunkCarrier];const dl=getDeadlineInfo(r.trunkCarrier);const seatTs=ud[r.id]?.openSeats_at;
+        {enriched.map((r) => {
+          // --- THE FALLBACK LOGIC ---
+          const carrierCode = r.trunkCarrier || r.airline;
+          const dl = getDeadlineInfo(carrierCode);
+          const rules = AIRLINE_RULES[carrierCode] || {}; 
+          const a = AGREEMENTS[carrierCode] || {};
+          const seatTs = ud[r.id]?.openSeats_at;
+          
           return(<div key={r.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,padding:"14px 18px"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:15,fontWeight:800,color:"#111827"}}>{r.fullFlightNum}</span>
-                <span style={{fontSize:11,color:"#6b7280"}}>{a?.name}</span>
+                <span style={{fontSize:15,fontWeight:800,color:"#111827"}}>{r.fullFlightNum || r.flight_number}</span>
+                <span style={{fontSize:11,color:"#6b7280"}}>{a.name || carrierCode}</span>
                 {r.isDirect&&<span style={{fontSize:9,background:"#111827",color:"#fff",padding:"1px 6px",borderRadius:99,fontWeight:700}}>DIRECT</span>}
               </div>
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:99,background:dl.urgency==="high"?"#fee2e2":dl.urgency==="medium"?"#fef3c7":"#d1fae5",color:dl.urgency==="high"?"#991b1b":dl.urgency==="medium"?"#78350f":"#065f46",fontWeight:600}}>{dl.label}</span>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:8,fontSize:11}}>
               <div><span style={{color:"#9ca3af"}}>Listing: </span><span style={{color:dl.urgency==="high"?"#dc2626":"#374151",fontWeight:600}}>{dl.label}</span></div>
-              <div><span style={{color:"#9ca3af"}}>Check-in: </span><span style={{color:"#374151"}}>{AIRLINE_RULES[r.trunkCarrier]?.checkIn?.slice(0,80)||"Standard — check airline"}</span></div>
-              <div><span style={{color:"#9ca3af"}}>Dress code: </span><span style={{color:"#374151"}}>{AIRLINE_RULES[r.trunkCarrier]?.dress?.slice(0,80)||"Smart casual"}</span></div>
+              <div><span style={{color:"#9ca3af"}}>Check-in: </span><span style={{color:"#374151"}}>{rules.checkIn?.slice(0,80)||"Standard — check airline"}</span></div>
+              <div><span style={{color:"#9ca3af"}}>Dress code: </span><span style={{color:"#374151"}}>{rules.dress?.slice(0,80)||"Smart casual"}</span></div>
               <div><span style={{color:"#9ca3af"}}>Seats updated: </span><span style={{color:seatTs?"#374151":"#d1d5db"}}>{seatTs?new Date(seatTs).toLocaleString():"Not yet"}</span></div>
             </div>
-            {!r.isDirect&&r.connections.filter(c=>c.airlineCode!=="??").length>0&&(
+            {!r.isDirect&&r.connections && r.connections.filter(c=>c.airlineCode!=="??").length>0&&(
               <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #f0f0f0"}}>
                 <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",marginBottom:4}}>CONNECTION REMINDERS</div>
-                {sortConnections(r.connections).filter(c=>c.airlineCode!=="??").slice(0,3).map(c=>{const cdl=getDeadlineInfo(c.airlineCode);
+                {sortConnections(r.connections).filter(c=>c.airlineCode!=="??").slice(0,3).map(c=>{
+                  const cdl=getDeadlineInfo(c.airlineCode);
+                  const crules = AIRLINE_RULES[c.airlineCode] || {};
                   return(<div key={c.id} style={{fontSize:11,display:"flex",gap:12,marginBottom:3,flexWrap:"wrap"}}>
                     <span style={{fontWeight:600,color:"#374151",minWidth:80}}>{c.fn}</span>
                     <span style={{color:cdl.urgency==="high"?"#dc2626":"#6b7280"}}>{cdl.label}</span>
-                    <span style={{color:"#9ca3af"}}>{AIRLINE_RULES[c.airlineCode]?.dress?.slice(0,50)||"Smart casual"}</span>
+                    <span style={{color:"#9ca3af"}}>{crules.dress?.slice(0,50)||"Smart casual"}</span>
                   </div>);})}
               </div>
             )}
