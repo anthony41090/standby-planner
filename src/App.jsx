@@ -1367,16 +1367,21 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
             addLog("Background research received! Parsing...");
             
             try {
-              // This version is better at finding the JSON even if Claude added chat text
               const rawData = backgroundData;
               const jsonStart = rawData.indexOf('{');
               const jsonEnd = rawData.lastIndexOf('}') + 1;
-              const jsonString = rawData.substring(jsonStart, jsonEnd);
               
-              parsed = JSON.parse(jsonString);
+              if (jsonStart === -1 || jsonEnd === 0) {
+                throw new Error("No JSON object found in response");
+              }
+
+              const jsonString = rawData.substring(jsonStart, jsonEnd);
+              // We use the outer 'parsed' variable, don't redefine it with 'const'
+              parsed = JSON.parse(jsonString); 
 
               if (parsed) {
-                unsub(); // Stop listening
+                clearInterval(loadingInterval); // Stop the heartbeat
+                unsub(); // Stop listening to Firebase
                 setStatus("parsing");
                 
                 const routes = [];
