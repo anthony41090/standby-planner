@@ -196,8 +196,8 @@ exports.handler = async (event) => {
     3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections.
     4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to (${filteredHubs.join(',')}). IF A HUB HAS NO TRUNK FLIGHT IN THE LIVE DATA, SKIP IT.
     5. STRICT AIRLINE: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them for a highly efficient connection, you MUST add a note: "⚠️ [Airline Name] is not standby eligible (confirmed ticket required)."
-    7. JSON ONLY: Return ONLY the structured JSON object.`;
+    6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them, you MUST add this exact text to the notes: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required). DO NOT use internal quotation marks around this text.
+    7. STRICT JSON SYNTAX: Return ONLY the structured JSON object. Ensure all string values are properly escaped. Do not use unescaped quotation marks inside your text fields.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

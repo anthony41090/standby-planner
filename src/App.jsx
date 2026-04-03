@@ -1106,7 +1106,16 @@ function NewTrip({onCancel,onCreate}){
         )}
         <FG label="Travel Date">
           <div style={{display:"flex",gap:8,alignItems:"flex-start",flexWrap:"wrap"}}>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...INP,flex:"1 1 160px",minWidth:140}}/>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{
+    ...INP,
+    WebkitAppearance: "auto", // <-- ADD THIS
+    appearance: "auto",       // <-- ADD THIS
+    paddingRight: 12,     // <-- ADD THIS IF THE ICON IS STILL HIDDEN
+    minHeight: 42,
+    flex:"1 1 160px",
+    minWidth:140
+  }}
+/>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               <div style={{fontSize:9,fontWeight:700,color:"#9ca3af",fontFamily:"monospace"}}>FLEX</div>
               <div style={{display:"flex",gap:4}}>
