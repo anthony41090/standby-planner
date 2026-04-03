@@ -12,18 +12,31 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 exports.handler = async (event) => {
-  const { prompt, userId, origin, finalDestination, hubs, date } = JSON.parse(event.body);
+  const { prompt, userId, origin, finalDestination, hubs, date, trunkFilter, cabin } = JSON.parse(event.body);
   const claudeKey = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
   const serpKey = process.env.SERPAPI_KEY;
 
   try {
-    console.log(`Double-Hop Research: ${origin} -> [${hubs}] -> ${finalDestination}`);
+    // 1. GLOBAL MULTI-DESTINATION LOGIC (ROOT CAUSE FIX)
+    // Convert comma-strings into clean Arrays
+    const destArray = finalDestination.split(',').map(d => d.trim().toUpperCase());
+    const hubArray = hubs ? hubs.split(',').map(h => h.trim().toUpperCase()) : [];
 
-    // 1. DYNAMIC DATE LOGIC
+    // Filter Hubs: Remove any airport that is already a final destination (e.g., move HND out of hubs)
+    const filteredHubs = hubArray.filter(h => !destArray.includes(h));
+    
+    // Reconstruct strings for the search engine
+    const cleanFinalStr = destArray.join(',');
+    const cleanHubStr = filteredHubs.join(',');
+    const allSearchTargets = [...new Set([...destArray, ...filteredHubs])].join(',');
+
+    console.log(`Double-Hop Research: ${origin} -> [${cleanHubStr}] -> ${cleanFinalStr}`);
+
+    // 2. DYNAMIC DATE LOGIC
     let connectionDate = date; 
-    const longHaulRegions = ['NRT', 'HND', 'ICN', 'TPE', 'HKG', 'LHR', 'FRA', 'CDG', 'AMS', 'SYD', 'AKL', 'SIN', 'PEK', 'PVG', 'BKK', 'DXB'];
-    const isLongHaul = longHaulRegions.some(code => finalDestination.toUpperCase().includes(code)) || 
-                       (hubs && hubs.split(',').some(h => longHaulRegions.includes(h.toUpperCase())));
+    const longHaulRegions = ['NRT', 'HND', 'ICN', 'TPE', 'HKG', 'LHR', 'FRA', 'CDG', 'AMS', 'SYD', 'AKL', 'SIN', 'PEK', 'PKX', 'PVG', 'BKK', 'DXB', 'KIX'];
+    const isLongHaul = longHaulRegions.some(code => cleanFinalStr.includes(code)) || 
+                       filteredHubs.some(h => longHaulRegions.includes(h));
 
     if (isLongHaul) {
       const nextDay = new Date(date);
@@ -31,15 +44,14 @@ exports.handler = async (event) => {
       connectionDate = nextDay.toISOString().split('T')[0];
     }
 
-    // 2. FETCH MULTI-DESTINATION TRUNK (Direct + Hubs)
-    const trunkDestinations = hubs ? `${finalDestination},${hubs}` : finalDestination;
-    const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${trunkDestinations}&outbound_date=${date}&type=2&api_key=${serpKey}`;
+    // 3. FETCH DATA
+    const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${allSearchTargets}&outbound_date=${date}&type=2&api_key=${serpKey}`;
     
     let trunkData = { best_flights: [], other_flights: [] };
     let connData = { best_flights: [], other_flights: [] };
 
-    if (hubs) {
-      const connUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${hubs}&arrival_id=${finalDestination}&outbound_date=${connectionDate}&type=2&api_key=${serpKey}`;
+    if (cleanHubStr) {
+      const connUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${cleanHubStr}&arrival_id=${cleanFinalStr}&outbound_date=${connectionDate}&type=2&api_key=${serpKey}`;
       const [trunkRes, connRes] = await Promise.all([fetch(trunkUrl), fetch(connUrl)]);
       trunkData = await trunkRes.json();
       connData = await connRes.json();
@@ -48,39 +60,46 @@ exports.handler = async (event) => {
       trunkData = await trunkRes.json();
     }
 
-    // 3. DYNAMIC ASYMMETRIC FILTERING (Route-Agnostic)
-    // We target any airline SerpApi flags as a 'Best Flight' or major carrier
-    const filterAnyMajorCarrier = (flights) => {
+    // 4. STRICT AIRLINE & CABIN FILTERING
+    const filterTrunk = (flights) => {
       return (flights || []).filter(f => {
-        // Deep look for airline info in nested objects
-        const airline = f.airline || (f.flights && f.flights[0] && f.flights[0].airline);
-        // Exclude low-cost-carriers or Spirit-style airlines if desired, otherwise allow all
-        return airline && !airline.toLowerCase().includes("spirit") && !airline.toLowerCase().includes("frontier");
+        const airlineInfo = f.airline || (f.flights && f.flights[0] && f.flights[0].airline) || "";
+        const airline = airlineInfo.toUpperCase();
+        
+        // If user explicitly selected a trunk airline (e.g., UA), only show that carrier
+        if (trunkFilter) {
+          return airline.includes(trunkFilter.toUpperCase());
+        }
+        
+        // Broad search fallback: exclude LCCs that don't have standby agreements
+        const excluded = ["SPIRIT", "FRONTIER", "SOUTHWEST", "RYANAIR", "EASYJET"];
+        return airline && !excluded.some(e => airline.includes(e));
       });
     };
 
     const liveFlights = {
-      // TRUNK: All direct and hub-bound major carriers
-      trunk_flights: filterAnyMajorCarrier([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 20),
-      // CONNECTIONS: Purely based on what gets you to the final city
-      connection_flights: (connData.best_flights || []).concat(connData.other_flights || []).slice(0, 50)
+      // Directs to ANY destination airport + all Hubs
+      trunk_flights: filterTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 25),
+      // Connections from Hubs to ANY of the destination airports
+      connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])].slice(0, 50)
     };
 
-    console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} major trunk options.`);
+    console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} filtered trunk options.`);
 
-    // 4. THE OPTIMIZED SONNET PROMPT
+    // 5. THE OPTIMIZED SONNET PROMPT
     const enhancedPrompt = prompt + `\n\n
     =========================================
-    LIVE DATA: ${origin} ➔ ${finalDestination}
+    LIVE DATA: ${origin} ➔ ${cleanFinalStr}
     =========================================
     ${JSON.stringify(liveFlights).substring(0, 95000)}
     
-    FINAL EXTRACTION INSTRUCTIONS:
-    1. DIRECT FLIGHTS: Extract EVERY non-stop flight from ${origin} to ${finalDestination}. This is the highest priority.
-    2. HUB CONNECTIONS: Select the TOP 6 most efficient hub routes via [${hubs}].
-    3. DATA COMPLETENESS: Do not discard flights for missing metadata. Use placeholders like "Boeing/Airbus" and "11" for aircraft/duration.
-    4. IATA ONLY: Use 3-letter codes for all locations.
-    5. JSON: Return ONLY the structured JSON object.`;
+    CRITICAL EXTRACTION RULES:
+    1. WIN STATE: A flight from ${origin} to ANY of these airports is a DIRECT flight: ${cleanFinalStr}.
+    2. HUB LIMIT: Select ONLY the TOP 6 hub routes total.
+    3. NO INTERNAL TRIPS: Do not suggest connections between destination airports (e.g., EWR to JFK).
+    4. AIRLINE PRIORITY: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partner carriers."}
+    5. CABIN: Target ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
+    6. JSON ONLY: Return ONLY the structured JSON object.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -90,7 +109,7 @@ exports.handler = async (event) => {
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6", 
+        model: "claude-3-5-sonnet-20241022", 
         max_tokens: 8192,
         messages: [{ role: "user", content: enhancedPrompt }]
       })
