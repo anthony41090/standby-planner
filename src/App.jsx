@@ -1336,93 +1336,81 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         }, 45000); 
         
         const unsub = onSnapshot(doc(db, "research", "anthony_alonso"), (docSnap) => {
-          const data = docSnap.data();
-          
-          // --- UPDATED SAFETY CHECK ---
-          // We only proceed if the status is "complete" AND the results are not the reset value "[]"
-          if (docSnap.exists() && data.status === "complete" && data.results !== "[]") {
-            const backgroundData = data.results;
-            
-            // --- CLEAR THE INTERVAL HERE ---
-            clearInterval(loadingInterval);
-            
-            addLog("New results received! Parsing...");
-            
-            try {
-              const rawData = backgroundData;
-              const jsonStart = rawData.indexOf('{');
-              const jsonEnd = rawData.lastIndexOf('}') + 1;
-              
-              if (jsonStart === -1 || jsonEnd === 0) {
-                throw new Error("No JSON object found in response");
-              }
+  if (!docSnap.exists()) return;
+  const data = docSnap.data();
 
-              const jsonString = rawData.substring(jsonStart, jsonEnd);
-              // We use the outer 'parsed' variable, don't redefine it with 'const'
-              parsed = JSON.parse(jsonString); 
+  // --- UPDATED SAFETY CHECK ---
+  // Only proceed if status is complete and results aren't the reset value "[]"
+  if (data.status === "complete" && data.results && data.results !== "[]") {
+    const backgroundData = data.results;
+    
+    // --- CLEAR THE INTERVAL HERE ---
+    clearInterval(loadingInterval);
+    addLog("Results detected! Stripping metadata and parsing...");
 
-              if (parsed) {
-                clearInterval(loadingInterval); // Stop the heartbeat
-                unsub(); // Stop listening to Firebase
-                setStatus("parsing");
-                
-                const routes = [];
-                // Process Direct Flights
-                (parsed.direct_flights || []).forEach(f => {
-                  routes.push({ ...f, id: `r-${uid()}`, isDirect: true, cabinAvail: cabinJ ? "J" : "Y" });
-                });
+    try {
+      // --- ROBUST JSON PARSER ---
+      // This regex finds the actual { JSON } block even if Claude added conversational text
+      const jsonMatch = backgroundData.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON found in response");
+      
+      const parsed = JSON.parse(jsonMatch[0]);
 
-              // Process Hub Routes
-(parsed.hub_routes || []).forEach((hr) => {
-  // Claude sometimes puts the data at the top level or inside 'trunk_flight'
-  const trunk = hr.trunk_flight || hr;
-  const trunkCode = trunk.airline || hr.airline || "??";
+      if (parsed) {
+        unsub(); // Stop listening to Firebase
+        setStatus("parsing");
+        
+        const routes = [];
 
-  // Validate the code against your AGREEMENTS dictionary
-  const trunkPartner = AGREEMENTS[trunkCode];
-  
-  // If we don't have an agreement, skip it; otherwise, process connections
-  if (!trunkPartner) return;
-
-  const conns = (hr.connections || []).map((c) => {
-    const cp = AGREEMENTS[c.airline];
-    return {
-      id: `c-${uid()}`,
-      conn: `${cp?.name || c.airline} ${c.flight_number} → ${c.destination}`,
-      fn: c.flight_number,
-      cd: c.departure_time,
-      ac: c.aircraft,
-      at: c.arrival_time,
-      apt: c.destination,
-      airlineCode: c.airline,
-      layoverHrs: c.layover_hrs,
-      cabinAvail: cp?.j ? "J" : "Y",
-    };
-  });
-
-  routes.push({
-    id: `r-${uid()}`,
-    isDirect: false,
-    trunkCarrier: trunkCode,
-    fullFlightNum: trunk.flight_number,
-    sfoDep: trunk.departure_time,
-    hub: hr.hub_code,
-    aircraft: trunk.aircraft,
-    note: `Via ${hr.hub_name}${hr.hub_notes ? ` · ${hr.hub_notes}` : ""}`,
-    connections: conns,
-  });
-});
-
-                setStatus("done");
-                if (onDone) onDone(routes);
-                addLog(`Success: Found ${routes.length} validated routes.`);
-              }
-            } catch (parseErr) {
-              console.error("JSON Parse Error:", parseErr);
-              addLog("Error parsing AI results.");
-            }
-          }
+        // 1. Process Direct Flights + Capture Notes
+        (parsed.direct_flights || []).forEach(f => {
+          routes.push({ 
+            ...f, 
+            id: `r-${uid()}`, 
+            isDirect: true, 
+            cabinAvail: cabinJ ? "J" : "Y",
+            note: f.notes || "" // Ensures direct notes are saved
+          });
         });
+
+        // 2. Process Hub Routes + Capture Hub Notes
+        (parsed.hub_routes || []).forEach(hr => {
+          const trunk = hr.trunk_flight || hr;
+          const trunkCode = trunk.airline || hr.airline || "??";
+          const trunkPartner = AGREEMENTS[trunkCode];
+          if (!trunkPartner) return;
+
+          const conns = (hr.connections || []).map(c => {
+            const cp = AGREEMENTS[c.airline];
+            return {
+              id: `c-${uid()}`,
+              conn: `${cp?.name || c.airline} ${c.flight_number} → ${c.destination}`,
+              fn: c.flight_number, cd: c.departure_time, ac: c.aircraft, at: c.arrival_time,
+              apt: c.destination, airlineCode: c.airline, layoverHrs: c.layover_hrs, 
+              cabinAvail: cp?.j ? "J" : "Y"
+            };
+          });
+
+          routes.push({
+            id: `r-${uid()}`, isDirect: false, trunkCarrier: trunkCode,
+            fullFlightNum: trunk.flight_number, sfoDep: trunk.departure_time,
+            hub: hr.hub_code, aircraft: trunk.aircraft,
+            // Combines Hub Name with the helpful Hub Notes from Claude
+            note: `Via ${hr.hub_name}${hr.hub_notes ? ` · ${hr.hub_notes}` : ""}`,
+            connections: conns
+          });
+        });
+
+        setStatus("done");
+        if (onDone) onDone(routes);
+        addLog(`Success: Parsed ${routes.length} routing options.`);
+      }
+    } catch (parseErr) {
+      console.error("JSON Parse Error:", parseErr);
+      addLog("Error parsing AI results. Check browser console.");
+    }
+  }
+});
       } else {
         throw new Error("Failed to trigger background task.");
       }
@@ -1640,41 +1628,63 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
         {enriched.map((r) => {
           // --- THE FALLBACK LOGIC ---
           const rawCode = r.trunkCarrier || r.airline || "";
-const carrierCode = rawCode.match(/[A-Z0-9]{2}/)?.[0] || rawCode;
-          const dl = getDeadlineInfo(carrierCode);
-          const rules = AIRLINE_RULES[carrierCode] || {}; 
-          const a = AGREEMENTS[carrierCode] || {};
+// THE REGEX FIX:
+// 1. match(/[A-Z0-9]{2}/) finds the first 2-character alphanumeric sequence
+// 2. .toUpperCase() ensures it matches your dictionary keys exactly
+const carrierCode = (rawCode.match(/[A-Z0-9]{2}/)?.[0] || rawCode).toUpperCase();
+
+// Now these lookups will work perfectly for United!
+const dl = getDeadlineInfo(carrierCode);
+const rules = AIRLINE_RULES[carrierCode] || {}; 
+const a = AGREEMENTS[carrierCode] || {};
           const seatTs = ud[r.id]?.openSeats_at;
           
-          return(<div key={r.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:10,padding:"14px 18px"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:15,fontWeight:800,color:"#111827"}}>{r.fullFlightNum || r.flight_number}</span>
-                <span style={{fontSize:11,color:"#6b7280"}}>{a.name || carrierCode}</span>
-                {r.isDirect&&<span style={{fontSize:9,background:"#111827",color:"#fff",padding:"1px 6px",borderRadius:99,fontWeight:700}}>DIRECT</span>}
-              </div>
-              <span style={{fontSize:10,padding:"3px 10px",borderRadius:99,background:dl.urgency==="high"?"#fee2e2":dl.urgency==="medium"?"#fef3c7":"#d1fae5",color:dl.urgency==="high"?"#991b1b":dl.urgency==="medium"?"#78350f":"#065f46",fontWeight:600}}>{dl.label}</span>
+          return (
+  <div key={r.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "14px 18px" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: "#111827" }}>{r.fullFlightNum || r.flight_number}</span>
+        <span style={{ fontSize: 11, color: "#6b7280" }}>{a.name || carrierCode}</span>
+        {r.isDirect && <span style={{ fontSize: 9, background: "#111827", color: "#fff", padding: "1px 6px", borderRadius: 99, fontWeight: 700 }}>DIRECT</span>}
+      </div>
+      <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 99, background: dl.urgency === "high" ? "#fee2e2" : dl.urgency === "medium" ? "#fef3c7" : "#d1fae5", color: dl.urgency === "high" ? "#991b1b" : dl.urgency === "medium" ? "#78350f" : "#065f46", fontWeight: 600 }}>
+        {dl.label}
+      </span>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 8, fontSize: 11 }}>
+      <div><span style={{ color: "#9ca3af" }}>Listing: </span><span style={{ color: dl.urgency === "high" ? "#dc2626" : "#374151", fontWeight: 600 }}>{dl.label}</span></div>
+      <div><span style={{ color: "#9ca3af" }}>Check-in: </span><span style={{ color: "#374151" }}>{rules.checkIn || "Standard — check airline"}</span></div>
+      <div><span style={{ color: "#9ca3af" }}>Dress code: </span><span style={{ color: "#374151" }}>{rules.dress || "Smart casual"}</span></div>
+      <div><span style={{ color: "#9ca3af" }}>Seats updated: </span><span style={{ color: seatTs ? "#374151" : "#d1d5db" }}>{seatTs ? new Date(seatTs).toLocaleString() : "Not yet"}</span></div>
+    </div>
+
+    {/* ─── EXPERT NOTES BLOCK ─── */}
+    {r.note && (
+      <div style={{ marginTop: 10, padding: "10px 12px", background: "#f8fafc", borderLeft: "3px solid #cbd5e1", borderRadius: 4, fontSize: 11, color: "#475569", lineHeight: "1.4" }}>
+        <div style={{ fontWeight: 800, fontSize: 9, color: "#94a3b8", textTransform: "uppercase", marginBottom: 4, letterSpacing: "0.05em" }}>Expert Advice</div>
+        {r.note}
+      </div>
+    )}
+
+    {!r.isDirect && r.connections && r.connections.filter(c => c.airlineCode !== "??").length > 0 && (
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 6 }}>CONNECTION REMINDERS</div>
+        {sortConnections(r.connections).filter(c => c.airlineCode !== "??").slice(0, 3).map(c => {
+          const cdl = getDeadlineInfo(c.airlineCode);
+          const crules = AIRLINE_RULES[c.airlineCode] || {};
+          return (
+            <div key={c.id} style={{ fontSize: 11, display: "flex", gap: 12, marginBottom: 4, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontWeight: 700, color: "#334155", minWidth: 70 }}>{c.fn}</span>
+              <span style={{ color: cdl.urgency === "high" ? "#dc2626" : "#64748b", fontWeight: 500 }}>{cdl.label}</span>
+              <span style={{ color: "#94a3b8", fontSize: 10 }}>• {crules.dress || "Smart casual"}</span>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:8,fontSize:11}}>
-              <div><span style={{color:"#9ca3af"}}>Listing: </span><span style={{color:dl.urgency==="high"?"#dc2626":"#374151",fontWeight:600}}>{dl.label}</span></div>
-              <div><span style={{color:"#9ca3af"}}>Check-in: </span><span style={{color:"#374151"}}>{rules.checkIn?.slice(0,80)||"Standard — check airline"}</span></div>
-              <div><span style={{color:"#9ca3af"}}>Dress code: </span><span style={{color:"#374151"}}>{rules.dress?.slice(0,80)||"Smart casual"}</span></div>
-              <div><span style={{color:"#9ca3af"}}>Seats updated: </span><span style={{color:seatTs?"#374151":"#d1d5db"}}>{seatTs?new Date(seatTs).toLocaleString():"Not yet"}</span></div>
-            </div>
-            {!r.isDirect&&r.connections && r.connections.filter(c=>c.airlineCode!=="??").length>0&&(
-              <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #f0f0f0"}}>
-                <div style={{fontSize:10,fontWeight:700,color:"#9ca3af",marginBottom:4}}>CONNECTION REMINDERS</div>
-                {sortConnections(r.connections).filter(c=>c.airlineCode!=="??").slice(0,3).map(c=>{
-                  const cdl=getDeadlineInfo(c.airlineCode);
-                  const crules = AIRLINE_RULES[c.airlineCode] || {};
-                  return(<div key={c.id} style={{fontSize:11,display:"flex",gap:12,marginBottom:3,flexWrap:"wrap"}}>
-                    <span style={{fontWeight:600,color:"#374151",minWidth:80}}>{c.fn}</span>
-                    <span style={{color:cdl.urgency==="high"?"#dc2626":"#6b7280"}}>{cdl.label}</span>
-                    <span style={{color:"#9ca3af"}}>{crules.dress?.slice(0,50)||"Smart casual"}</span>
-                  </div>);})}
-              </div>
-            )}
-          </div>);})}
+          );
+        })}
+      </div>
+    )}
+  </div>
+);})}
       </div>
     </div>)}
 
