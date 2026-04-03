@@ -18,7 +18,6 @@ exports.handler = async (event) => {
 
   try {
     // 1. GLOBAL MULTI-DESTINATION LOGIC
-    // Treats all airports in a city (HND,NRT or JFK,EWR,LGA) as primary goals
     const destArray = finalDestination.split(',').map(d => d.trim().toUpperCase());
     const hubArray = hubs ? hubs.split(',').map(h => h.trim().toUpperCase()) : [];
 
@@ -59,20 +58,25 @@ exports.handler = async (event) => {
       trunkData = await trunkRes.json();
     }
 
-    // 4. STRICT AIRLINE FILTERING
+    // 4. STRICT AIRLINE & ORIGIN FILTERING (The Hallucination Killer)
     const filterTrunk = (flights) => {
+      const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
+
       return (flights || []).filter(f => {
-        const airlineInfo = f.airline || (f.flights && f.flights[0] && f.flights[0].airline) || "";
+        const flightObj = f.flights?.[0] || f;
+        const airlineInfo = flightObj.airline || f.airline || "";
         const airline = airlineInfo.toUpperCase();
         
-        // If a trunk carrier (e.g., United) was selected, enforce it strictly for leg 1
-        if (trunkFilter) {
-          return airline.includes(trunkFilter.toUpperCase());
-        }
+        // Strict Origin Check
+        const flightOrigin = (flightObj.departure_airport?.id || f.departure_airport?.id || "").toUpperCase();
+        if (flightOrigin && !allowedOrigins.includes(flightOrigin)) return false;
         
-        // General major carriers only (avoiding non-agreement LCCs like ZipAir for trunk)
-        const majorCarriers = ["UA", "AS", "HA", "JL", "NH", "CX", "BR", "KE", "BA", "LH", "AF", "AA", "DL"]; 
-        return majorCarriers.some(mc => airline.includes(mc));
+        // Strict Trunk Airline Check
+        if (trunkFilter && !airline.includes(trunkFilter.toUpperCase())) return false;
+        
+        // Exclude LCCs without standby agreements for the long-haul
+        const excluded = ["SPIRIT", "FRONTIER", "SOUTHWEST", "RYANAIR", "EASYJET", "ZIPAIR"];
+        return airline && !excluded.some(e => airline.includes(e));
       });
     };
 
@@ -81,20 +85,24 @@ exports.handler = async (event) => {
       connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])].slice(0, 50)
     };
 
-    console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} filtered trunk options.`);
+    console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} strict trunk options.`);
 
-    // 5. THE CLAUDE SONNET 4.6 PROMPT
+    // 5. THE OPTIMIZED SONNET 4.6 PROMPT
     const enhancedPrompt = prompt + `\n\n
-    CRITICAL EXTRACTION RULES:
-    1. WIN STATE: Any flight from ${origin} to ${cleanFinalStr} is a DIRECT flight.
-    2. HUB LIMIT: Select ONLY the TOP 6 hub routes total.
-    3. NO INTERNAL TRIPS: Do not suggest connections between destination airports (e.g., EWR to JFK).
-    4. AIRLINE PRIORITY: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."}
-    5. CABIN: Target ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. JSON ONLY: Return ONLY the structured JSON object.
+    =========================================
+    LIVE DATA: ${origin} ➔ ${cleanFinalStr}
+    =========================================
+    ${JSON.stringify(liveFlights).substring(0, 90000)}
     
-    DATA:
-    ${JSON.stringify(liveFlights).substring(0, 90000)}`;
+    CRITICAL DATA INTEGRITY & EXTRACTION RULES:
+    1. STRICT ORIGIN: Every trunk flight MUST depart from: ${origin}. IGNORE flights departing from anywhere else.
+    2. DIRECT vs HUB:
+       - DIRECT: Flights landing exactly in ${cleanFinalStr}.
+       - HUB: Flights landing in ${cleanHubStr}. You MUST provide a valid connecting flight from that hub to ${cleanFinalStr}. 
+    3. NO QUOTA PANIC (ANTI-HALLUCINATION): You are asked for UP TO 6 hub routes. If the data only has 1 or 2 valid trunk flights departing from ${origin}, ONLY output those 1 or 2 routes. DO NOT invent flights to reach the number 6.
+    4. NO HALLUCINATIONS: Do not guess routes. If the data says UA 837 goes to NRT, do not write HND. 
+    5. STRICT AIRLINE & CABIN: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
+    6. JSON ONLY: Return ONLY the structured JSON object.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

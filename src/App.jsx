@@ -1254,30 +1254,51 @@ function Research({trip,onDone,onSkip}){
   async function run(){
     setStatus("searching");
 
-    // 1. First, define the raw array from the trip object
-    const originAirports = (trip.originCodes && trip.originCodes.length > 0) 
-      ? trip.originCodes 
-      : [trip.origin];
-
-    // 2. Now resolve the Global City-to-Airport Mappings
-    const originInput = trip.origin.toUpperCase();
-    // originAirports[0] is now safely defined for this fallback
-    const originCode = originCityToAirports[originInput] || originAirports[0];
+    // --- 1. USE THE APP'S BUILT-IN AIRPORT ARRAYS ---
+    const originCode = (trip.originCodes && trip.originCodes.length > 0) 
+      ? trip.originCodes.join(',') 
+      : trip.origin.toUpperCase();
     
-    const destInput = trip.destination.split(",")[0].trim();
-    const searchCode = cityToAirports[destInput] || (trip.destCodes && trip.destCodes.length > 0 ? trip.destCodes[0] : destInput);
+    const searchCode = (trip.destCodes && trip.destCodes.length > 0) 
+      ? trip.destCodes.join(',') 
+      : trip.destination.toUpperCase();
 
-    // 3. Define the string for logging
+    // --- 2. LOGGING ---
     const originStr = originCode.split(",").join("/");
     addLog(`Researching ${originStr} → ${trip.destination}…`);
 
-   // --- Continue with Region Detection ---
+    // --- 3. DYNAMIC PROXIMITY HUBS ---
+    const mathCode = searchCode.includes(",") ? searchCode.split(",")[0] : searchCode;
+    const destCoords = HUB_COORDINATES[mathCode];
+    let hubArray = [];
+
+    if (destCoords) {
+      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
+        if (searchCode.includes(hub)) return false;
+        const hCoords = HUB_COORDINATES[hub];
+        if (!hCoords) return false;
+        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 1900; 
+      })
+      .sort((a, b) => {
+          const priority = ["KIX", "ICN", "TPE"];
+          if (priority.includes(a) && !priority.includes(b)) return -1;
+          if (!priority.includes(a) && priority.includes(b)) return 1;
+          return 0;
+      })
+      .slice(0, 6);
+      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${mathCode}.`);
+    } else {
+      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
+      addLog(`Coordinates unknown for ${mathCode}. Using global fallbacks.`);
+    }
+    const dynamicHubs = hubArray.join(",");
+
+   // --- 4. REGION DETECTION ---
     const searchTexts = [
       (trip.destination||"").toLowerCase() + " " + ((trip.destCodes||[]).join(" ")).toLowerCase(),
       (trip.origin||"").toLowerCase() + " " + ((trip.originCodes||[]).join(" ")).toLowerCase(),
     ];
 
-    // DO NOT MISS THIS LOOP:
     let matchedRegion = null, matchedData = null;
     for(const searchText of searchTexts){
       for(const[region,data] of Object.entries(REGIONS)){
@@ -1300,52 +1321,34 @@ function Research({trip,onDone,onSkip}){
       addLog("No region match — broad search across all partners.");
     }
 
-    // Apply trunk airline filter if user selected a specific carrier
+    // --- 5. AIRLINE FILTERING & INSTRUCTIONS ---
     const trunkFilter = trip.trunkAirline || null;
     if (trunkFilter) {
-      // Validate: if J cabin selected, trunk airline must have J agreement
       if (cabinJ && AGREEMENTS[trunkFilter] && !AGREEMENTS[trunkFilter].j) {
         addLog(`⚠ ${AGREEMENTS[trunkFilter].name} has economy-only agreement — no J class available on trunk`);
       }
       trunkCarriers = [trunkFilter];
       addLog(`⚡ Trunk airline filter: ${AGREEMENTS[trunkFilter]?.name||trunkFilter} (${trunkFilter}) only`);
-      // Expand connection pool — when filtering to one trunk airline, ensure ALL economy partners are available for connections
       if (matchedData) {
         const allConn = new Set([...matchedData.econConnectors, ...matchedData.jTrunkCarriers.filter(c=>c!==trunkFilter)]);
         connCarriers = [...allConn];
       }
     } else {
-      // Always include home airlines at front when searching all
       ["AS","HA"].forEach(h=>{if(!trunkCarriers.includes(h))trunkCarriers.unshift(h);});
     }
     addLog(`Trunk carriers (${cabinJ?"J":"Y"}): ${trunkCarriers.join(", ")}${!trunkFilter?" — AS/HA = HOME priority":""}`);
     addLog(`Connection carriers: ${connCarriers.join(", ")}`);
 
-    const trunkNames = trunkCarriers.filter(c=>AGREEMENTS[c]).map(c=>`${c} (${AGREEMENTS[c].name})`).join(", ");
-    const connNames = connCarriers.filter(c=>AGREEMENTS[c]).map(c=>`${c} (${AGREEMENTS[c].name})`).join(", ");
-    const flex = trip.flexDays || 0;
-    const dateStr = trip.travelDate
-      ? (flex > 0
-        ? `between ${(() => { const d=new Date(trip.travelDate+"T00:00:00"); const s=new Date(d); s.setDate(s.getDate()-flex); const e=new Date(d); e.setDate(e.getDate()+flex); return `${s.toISOString().slice(0,10)} and ${e.toISOString().slice(0,10)} (±${flex} days from ${trip.travelDate})`; })()}`
-        : `on or around ${trip.travelDate}`)
-      : "in the near future";
-    const hubNotes = matchedData ? matchedData.hubStrategy.map(h=>`- ${h.hub}: ${h.carrier||""} — ${h.note}`).join("\n") : "";
-
-    // Build explicit routing hub instructions if we have them
     let routingHubInstructions = "";
     if (matchedData?.routingHubs) {
       let hubs = matchedData.routingHubs;
-      // When filtering to a specific trunk airline, only include relevant hubs
       if (trunkFilter) {
         if (trunkFilter === "UA" || trunkFilter === "AS") {
-          // Show UA/AS direct hubs + HNL for AS
           hubs = hubs.filter(h => h.uaDirect || (trunkFilter==="AS" && h.isHome) || h.code==="HNL");
         } else if (trunkFilter === "HA") {
           hubs = hubs.filter(h => h.code==="HNL" || h.isHome);
         } else {
-          // For other airlines (QR, BA, LH etc.), show only the hubs they fly to
           hubs = hubs.filter(h => !h.uaDirect && h.connPartners.includes(trunkFilter));
-          // If no matching hubs, fall back to all non-UA hubs
           if (hubs.length === 0) hubs = matchedData.routingHubs.filter(h => !h.uaDirect);
         }
       }
@@ -1356,48 +1359,21 @@ function Research({trip,onDone,onSkip}){
       routingHubInstructions = `
 MANDATORY ROUTING HUBS TO CHECK — search for ${trunkLabel} flights to ALL of these from ${originCode}:
 ${directHubs.length>0?`
-${trunkLabel} ROUTES TO ASIAN HUBS (check each one — do NOT skip any):
+${trunkLabel} ROUTES TO ASIAN HUBS:
 ${directHubs.map(h=>`- ${originCode} → ${h.code} (${h.name}): ${h.note}${h.connPartners.length>0?` → then connections on ${h.connPartners.join("/")} to final destination`:""}`).join("\n")}
 `:""}${partnerHubs.length>0?`
 PARTNER HUB ROUTES:
 ${partnerHubs.map(h=>`- Via ${h.code} (${h.name}): ${h.note}. Connections: ${h.connPartners.join(", ")}`).join("\n")}
 `:""}
-You MUST include a hub_route entry for EACH hub where you find a viable ${trunkLabel} flight from ${originCode}. Do not skip any hub just because another exists.`;
+You MUST include a hub_route entry for EACH hub where you find a viable ${trunkLabel} flight from ${originCode}.`;
       addLog(`Routing hubs: ${hubs.map(h=>h.code).join(", ")}`);
     }
 
-     // Build the airline constraint section of the prompt
     const airlineConstraint = trunkFilter
-      ? `\nIMPORTANT: The traveler has selected ${AGREEMENTS[trunkFilter]?.name||trunkFilter} (${trunkFilter}) as their ONLY trunk airline. Search ONLY for ${trunkFilter} flights from ${originCode} to hub airports. Do NOT include flights on other airlines for the trunk leg. Connections from the hub to the final destination can be on ANY of the connection carriers listed above.`
-      : `\nCRITICAL: Alaska Airlines (AS) and Hawaiian Airlines (HA) are the traveler's HOME airlines — highest standby priority. Always search AS/HA routes first, including via Honolulu (HNL).`;
+      ? `\nIMPORTANT: The traveler has selected ${AGREEMENTS[trunkFilter]?.name||trunkFilter} (${trunkFilter}) as their ONLY trunk airline. Search ONLY for ${trunkFilter} flights from ${originCode} to hub airports.`
+      : `\nCRITICAL: Alaska Airlines (AS) and Hawaiian Airlines (HA) are the traveler's HOME airlines. Always search AS/HA routes first.`;
 
-    // Build explicit J vs Y airline lists for the prompt
-    const jPartnerList = trunkCarriers.filter(c=>AGREEMENTS[c]?.j).map(c=>`${c}`).join(", ");
-    const yOnlyList = [...new Set([...trunkCarriers,...connCarriers])].filter(c=>AGREEMENTS[c]&&!AGREEMENTS[c].j).map(c=>`${c}`).join(", ");
-   
-
-    // --- 2. DYNAMIC PROXIMITY HUBS ---
-    // Use the first airport in the string for coordinate math (e.g., HND for Tokyo)
-    const mathCode = searchCode.includes(",") ? searchCode.split(",")[0] : searchCode;
-    const destCoords = HUB_COORDINATES[mathCode.toUpperCase()];
-    let hubArray = [];
-
-    if (destCoords) {
-      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
-        // Don't suggest a hub that is actually one of our final destinations
-        if (searchCode.includes(hub)) return false;
-        const hCoords = HUB_COORDINATES[hub];
-        if (!hCoords) return false;
-        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 1600; 
-      }).slice(0, 5);
-      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${mathCode}.`);
-    } else {
-      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
-      addLog(`Coordinates unknown for ${mathCode}. Using global fallbacks.`);
-    }
-    const dynamicHubs = hubArray.join(",");
-
-    // --- 3. BUILD THE PROMPT ---
+    // --- 6. BUILD THE PROMPT ---
     const prompt = `You are a helpful travel assistant for a non-rev standby app.
 Your task is to find flight schedules and map them into JSON.
 
@@ -1428,7 +1404,6 @@ Return ONLY valid JSON in this format:
     }
   ]
 }`;
-
     addLog("Initiating Claude Research (Priority 1)...");
 
     try {
