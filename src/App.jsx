@@ -1348,34 +1348,28 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     }
     const dynamicHubs = hubArray.join(",");
     // -----------------------------------
-  const prompt = `You are a strict data extraction engine for a non-rev travel app.
-Your task is to map flight schedules into a JSON response.
+  const prompt = `You are a helpful travel assistant for a non-rev standby app.
+Your task is to find flight schedules and map them into JSON.
 
-STRICT DATA INTEGRITY RULES:
-1. ORIGIN VALIDATION: Only include flights where the origin is one of these: ${originAirports.join(", ")}. 
-   - Accept any flight starting at SFO, OAK, or SJC. 
-   - If the search data shows a flight from ORD, LAX, or any city NOT in the list above, DISCARD it.
-2. DESTINATION VALIDATION: Only include flights that end at "${trip.destination}" or one of these hubs: ${dynamicHubs}.
-3. NO HALLUCINATIONS: If you cannot find a specific flight number for a specific route in the data, do NOT include it. Accuracy is more important than quantity.
-4. FLIGHT NUMBER CHECK: Ensure the flight number actually serves the requested route in the provided data.
+RULES:
+1. ORIGIN: Find flights departing from ${originAirports.join(" or ")}.
+2. DESTINATION: Find flights arriving at ${trip.destination} (including NRT or HND) or these hubs: ${dynamicHubs}.
+3. AIRLINES: Focus on UA, AS, HA, and their partners (JAL, ANA, Zipair, Cathay, etc.) but all airlines are still eligible.
+4. ACCURACY: Use real flight numbers and times from your search.
 
-STRICT LIMITS:
-- Max 10 total routing options.
-- Keep 'note' strings under 60 characters.
-
-Return ONLY valid JSON in this exact format:
+Return ONLY valid JSON in this format:
 {
   "direct_flights": [
     {
-      "airline": "AA", 
-      "flight_number": "AA 123", 
-      "departure_time": "10:00", 
-      "arrival_time": "14:00", 
-      "aircraft": "787", 
+      "airline": "UA", 
+      "flight_number": "UA 837", 
+      "departure_time": "11:40", 
+      "arrival_time": "15:00", 
+      "aircraft": "777", 
       "origin": "SFO", 
-      "destination": "HND", 
+      "destination": "NRT", 
       "duration_hrs": 11, 
-      "notes": "Example note"
+      "notes": "Direct United service"
     }
   ],
   "hub_routes": [
@@ -1386,7 +1380,7 @@ Return ONLY valid JSON in this exact format:
       "connections": [
         { "airline": "OZ", "flight_number": "OZ 102", "destination": "NRT", "departure_time": "18:00", "layover_hrs": 3 }
       ],
-      "hub_notes": "Reliable connection via Seoul."
+      "hub_notes": "Connect via Seoul Incheon."
     }
   ]
 }`;
