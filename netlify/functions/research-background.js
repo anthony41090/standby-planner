@@ -6,80 +6,90 @@ const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY, 
   authDomain: "standby-planner.firebaseapp.com",
   databaseURL: "https://standby-planner-default-rtdb.firebaseio.com",
-  projectId: "standby-planner",
-  storageBucket: "standby-planner.appspot.com",
-  messagingSenderId: "783265538352",
-  appId: "1:783265538352:web:69cd6e8603bc8aae89ec3c"
+  projectId: "standby-planner"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 export const handler = async (event) => {
-  const { prompt, userId } = JSON.parse(event.body);
+  // 1. Unpack the variables sent from App.jsx
+  const { prompt, userId, origin, destination, date } = JSON.parse(event.body);
 
-  const key = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
+  const claudeKey = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
+  const serpKey = process.env.SERPAPI_KEY; // We will add this to Netlify in Step 3!
 
   try {
-    console.log(`Research started for: ${userId}`);
-    
-    if (!key) {
-      console.error("CRITICAL ERROR: No Anthropic key found in environment variables (VITE_ANTHROPIC_KEY).");
-      throw new Error("Missing API Key");
+    console.log(`Research started for: ${userId} | ${origin} -> ${destination} on ${date}`);
+
+    if (!claudeKey || !serpKey) {
+      throw new Error("Missing API Keys (Claude or SerpAPI).");
     }
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // ==========================================
+    // PHASE 1: Fetch LIVE data from SerpAPI (Google Flights)
+    // ==========================================
+    console.log("Fetching live schedules from SerpAPI...");
+    // type=2 means "One Way". We ask for direct flights and 1-stop connections.
+    const serpUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${destination}&outbound_date=${date}&type=2&api_key=${serpKey}`;
+    
+    const serpResponse = await fetch(serpUrl);
+    const serpData = await serpResponse.json();
+
+    // We extract the "best_flights" and "other_flights" arrays to give to Claude
+    const liveFlights = {
+      best_flights: serpData.best_flights || [],
+      other_flights: serpData.other_flights || []
+    };
+
+    // Compress the data so we don't blow up Claude's token limit
+    const compressedFlightData = JSON.stringify(liveFlights).substring(0, 80000); 
+
+    // ==========================================
+    // PHASE 2: Claude Acts as the Data Analyst
+    // ==========================================
+    console.log("Passing live data to Claude for formatting...");
+    
+    // We append the LIVE data to your original App.jsx prompt
+    const enhancedPrompt = prompt + `\n\n
+    =========================================
+    LIVE FLIGHT DATA FROM GOOGLE FLIGHTS
+    =========================================
+    ${compressedFlightData}
+    
+    CRITICAL INSTRUCTIONS:
+    1. DO NOT guess or hallucinate schedules. You MUST ONLY use the flights provided in the LIVE FLIGHT DATA above.
+    2. Apply the ZED/MIBA airline rules requested to filter this data.
+    3. Return strictly valid JSON matching the exact schema requested. No markdown, no conversational text.
+    `;
+
+    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "token-efficient-tools-2025-02-19"
+        "x-api-key": claudeKey,
+        "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
         max_tokens: 4000,
-        tools: [{ type: "web_search_20260209", name: "web_search" }],
-        messages: [{ 
-          role: "user", 
-          content: prompt + `
+        messages: [{ role: "user", content: enhancedPrompt }]
+      })
+    });
 
-IMPORTANT: You are under a strict execution time limit. Do NOT perform deep or exhaustive web searches. You may perform a maximum of ONE targeted web search to verify current routes. You must finish processing and return the data in under 2 minutes.
+    const claudeData = await claudeResponse.json();
 
-CRITICAL: You MUST respond with strictly valid JSON. Do not include any conversational text, markdown formatting, emojis, or explanations. 
-Your output must exactly match this JSON schema:
-{
-  "direct_flights": [
-    { "flight": "UA 837", "route": "SFO-NRT", "departs": "11:40", "arrives": "15:10+1", "duration": "11.5 hrs" }
-  ],
-  "hub_routes": [
-    {
-      "hub": "ICN",
-      "trunk_flight": "UA 35 SFO-ICN",
-      "connections": [
-        { "flight": "KE 705", "route": "ICN-NRT", "departs": "20:45", "arrives": "22:10", "duration": "3.0 hrs" }
-      ]
-    }
-  ]
-}` 
-        }]
-      }) 
-    }); 
-
-    const data = await response.json();
-
-    if (!data.content) {
-      console.error("Claude API Error Detail:", data.error || data);
-      throw new Error(data.error?.message || "API returned no content");
+    if (!claudeData.content) {
+        throw new Error("Claude returned no content");
     }
 
-    const text = data.content
-      .filter(block => block.type === "text")
-      .map(block => block.text)
-      .join("\n");
+    const finalJsonText = claudeData.content[0].text;
 
+    // ==========================================
+    // PHASE 3: Save to Firebase
+    // ==========================================
     await setDoc(doc(db, "research", userId), {
-      results: text,
+      results: finalJsonText,
       timestamp: new Date().toISOString(),
       status: "complete"
     });

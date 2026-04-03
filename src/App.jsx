@@ -1335,13 +1335,16 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
 
     try {
       // 1. Trigger the Background Function
-      const resp = await fetch("/.netlify/functions/research-background", {
+      const response = await fetch("/.netlify/functions/research-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // Add org, dest, and travelDate to the payload!
         body: JSON.stringify({ 
-          prompt: prompt, 
-          engine: "claude",
-          userId: "anthony_alonso" 
+          prompt: finalPrompt, 
+          userId: uid,
+          origin: org,            // e.g., "SFO"
+          destination: dest,      // e.g., "NRT"
+          date: travelDate        // e.g., "2026-04-08"
         })
       });
 
