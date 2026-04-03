@@ -1338,17 +1338,16 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
       const response = await fetch("/.netlify/functions/research-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Add org, dest, and travelDate to the payload!
         body: JSON.stringify({ 
-          prompt: finalPrompt, 
+          prompt: prompt, // <-- FIXED: Use your actual variable named 'prompt'
           userId: uid,
-          origin: org,            // e.g., "SFO"
-          destination: dest,      // e.g., "NRT"
-          date: travelDate        // e.g., "2026-04-08"
+          origin: trip.origin, // <-- Grab origin from your trip object
+          destination: trip.destination, // <-- Grab destination from your trip object
+          date: trip.travelDate // <-- Grab travel date from your trip object
         })
       });
 
-      if (resp.status === 202) {
+      if (response.status === 202) {
         addLog("Research task started in background (bypass 60s timeout)...");
         
         // 2. Start Listening to Firebase for the result
