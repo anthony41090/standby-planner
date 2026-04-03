@@ -13,8 +13,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 // Alaska Airlines ZED/MIBA · Full agreement database · Any origin → Any dest
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const uid = () => Math.random().toString(36).substr(2, 9);
-
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 3958.8; // Radius of the Earth in miles
   const dLat = (lat2 - lat1) * Math.PI / 180;
