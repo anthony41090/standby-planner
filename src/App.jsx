@@ -1734,13 +1734,13 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
                   </div>
                   <div style={{flex:1}}>
                     <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                      <span style={{fontSize:18,fontWeight:900,color:"#111827"}}>{r.fullFlightNum}</span>
-                      <span style={{fontSize:11,color:"#9ca3af",fontFamily:"monospace"}}>{a?.name||r.trunkCarrier}</span>
+                      <span style={{fontSize:18,fontWeight:900,color:"#111827"}}>{r.fullFlightNum || r.flight_number}</span>
+                      <span style={{fontSize:11,color:"#9ca3af",fontFamily:"monospace"}}>{a?.name || r.trunkCarrier || r.airline}</span>
                       {a?.alliance&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:"#f3f4f6",color:"#6b7280"}}>{a.alliance}</span>}
                       <span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",padding:"1px 7px",borderRadius:99,fontFamily:"monospace"}}>{r.aircraft}</span>
                       {r.isDirect&&<span style={{fontSize:10,background:"#111827",color:"#fff",padding:"1px 8px",borderRadius:99,fontWeight:700}}>DIRECT</span>}
                     </div>
-                    <div style={{fontSize:11,color:"#9ca3af"}}>{trip.origin} → <strong style={{color:"#6b7280"}}>{r.hub}</strong> · Dep <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.sfoDep}</span> · Arr <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.hubArr}</span></div>
+                    <div style={{fontSize:11,color:"#9ca3af"}}>{trip.origin} → <strong style={{color:"#6b7280"}}>{r.hub || r.destination}</strong> · Dep <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.sfoDep || r.departure_time}</span> · Arr <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.hubArr || r.arrival_time}</span></div>
                     {r.note&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2,fontStyle:"italic"}}>{r.note}</div>}
                     {seatTs&&<div style={{fontSize:9,color:"#d1d5db",marginTop:2}}>Seats updated {new Date(seatTs).toLocaleString()}</div>}
                   </div>
@@ -1762,9 +1762,9 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
               </div>
               {r.isDirect?(
                 <div style={{background:"#fff",padding:"10px 18px",display:"flex",alignItems:"center",flexWrap:"wrap",gap:10}}>
-                  <span style={{fontSize:12,fontWeight:700,color:"#2563eb"}}>{r.connections[0]?.at}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:"#2563eb"}}>{r.connections?.[0]?.at || r.arrival_time}</span>
                   <span style={{fontSize:10,color:"#059669",fontWeight:600}}>✓ {a?.how||"MyIDTravel"}</span>
-                  <span style={{fontSize:10,color:"#9ca3af"}}>{r.connections[0]?.apt}</span>
+                  <span style={{fontSize:10,color:"#9ca3af"}}>{r.connections?.[0]?.apt || r.destination}</span>
                   <Btn onClick={()=>setExp(p=>({...p,[r.id+"_rules"]:!p[r.id+"_rules"]}))} dim>{exp[r.id+"_rules"]?"▲":"ⓘ Rules"}</Btn>
                   <div style={{flex:1}}/>
                   {confirmDel===r.id?(<><Btn onClick={()=>setConfirmDel(null)} dim>Cancel</Btn><button onClick={()=>deleteRoute(r.id)} style={{fontSize:10,color:"#fff",background:"#dc2626",border:"none",borderRadius:4,padding:"4px 10px",cursor:"pointer",fontWeight:600}}>Confirm Delete</button></>):(<button onClick={()=>setConfirmDel(r.id)} style={{fontSize:10,color:"#dc2626",background:"none",border:"none",cursor:"pointer"}}>Remove</button>)}
