@@ -61,6 +61,21 @@ exports.handler = async (event) => {
     // 4. STRICT FILTERING & DATA MINIFICATION
     const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
 
+    // GLOBAL TRANSLATOR: Maps 2-letter codes to Google Flights primary brand names
+    const AIRLINE_NAMES = {
+      // North America
+      "UA": "UNITED", "AA": "AMERICAN", "DL": "DELTA", "AS": "ALASKA", "HA": "HAWAIIAN", "WN": "SOUTHWEST", "B6": "JETBLUE", "F9": "FRONTIER", "NK": "SPIRIT", "SY": "SUN COUNTRY", "G4": "ALLEGIANT", "MX": "BREEZE", "XE": "JSX",
+      "AC": "AIR CANADA", "WS": "WESTJET", "PD": "PORTER", "TS": "TRANSAT", "AM": "AEROMEXICO", "Y4": "VOLARIS", "VB": "VIVA",
+      // Europe
+      "BA": "BRITISH", "LH": "LUFTHANSA", "AF": "AIR FRANCE", "KL": "KLM", "IB": "IBERIA", "AY": "FINNAIR", "SK": "SAS", "TP": "TAP", "EI": "AER LINGUS", "AZ": "ITA", "U2": "EASYJET", "FR": "RYANAIR", "W6": "WIZZ", "VS": "VIRGIN ATLANTIC", "LX": "SWISS", "OS": "AUSTRIAN", "SN": "BRUSSELS", "TK": "TURKISH", "A3": "AEGEAN", "FI": "ICELANDAIR", "UX": "AIR EUROPA", "VY": "VUELING", "EW": "EUROWINGS", "DE": "CONDOR", "LO": "LOT", "B0": "LA COMPAGNIE", "4Y": "DISCOVER", "N0": "NORSE",
+      // Asia
+      "JL": "JAPAN", "NH": "NIPPON", "KE": "KOREAN", "OZ": "ASIANA", "CX": "CATHAY", "BR": "EVA", "CI": "CHINA AIRLINES", "SQ": "SINGAPORE", "MH": "MALAYSIA", "TG": "THAI", "VN": "VIETNAM", "PR": "PHILIPPINE", "GA": "GARUDA", "CA": "AIR CHINA", "MU": "CHINA EASTERN", "CZ": "CHINA SOUTHERN", "HU": "HAINAN", "3U": "SICHUAN", "HO": "JUNEYAO", "MF": "XIAMEN", "ZH": "SHENZHEN", "SC": "SHANDONG", "UO": "EXPRESS", "HX": "HONG KONG", "JQ": "JETSTAR", "GK": "JETSTAR", "TR": "SCOOT", "5J": "CEBU", "ZG": "ZIPAIR", "MM": "PEACH", "IT": "TIGERAIR", "D7": "AIRASIA", "AK": "AIRASIA", "BX": "AIR BUSAN", "LJ": "JINAIR", "7C": "JEJU", "TW": "T'WAY", "RS": "AIR SEOUL", "ZE": "EASTAR",
+      // Middle East & Africa
+      "EK": "EMIRATES", "QR": "QATAR", "EY": "ETIHAD", "SV": "SAUDIA", "RJ": "ROYAL JORDANIAN", "GF": "GULF", "WY": "OMAN", "LY": "EL AL", "SA": "SOUTH AFRICAN", "ET": "ETHIOPIAN", "MS": "EGYPTAIR", "AT": "ROYAL AIR", "KQ": "KENYA", "XY": "FLYNAS",
+      // South America & Oceania
+      "LA": "LATAM", "CM": "COPA", "AV": "AVIANCA", "AR": "AEROLINEAS ARGENTINAS", "G3": "GOL", "AD": "AZUL", "QF": "QANTAS", "VA": "VIRGIN AUSTRALIA", "NZ": "NEW ZEALAND", "FJ": "FIJI"
+    };
+
     // Helper function to cleanly split "YYYY-MM-DD HH:MM"
     const splitDateTime = (timeStr) => {
       if (!timeStr) return { date: "", time: "" };
@@ -96,9 +111,14 @@ exports.handler = async (event) => {
           if (!f.dest || !allSearchTargets.includes(f.dest)) return false;
           
           if (trunkFilter) {
-            const filter = trunkFilter.toUpperCase();
-            // Checks BOTH airline name ("UNITED") and flight number ("UA 35")
-            if (!f.airline.toUpperCase().includes(filter) && !f.flight_number.toUpperCase().includes(filter)) {
+            const filterCode = trunkFilter.toUpperCase();
+            const filterName = AIRLINE_NAMES[filterCode] || filterCode;
+            
+            const airlineUpper = f.airline.toUpperCase();
+            const flightNumUpper = f.flight_number.toUpperCase();
+
+            // Checks BOTH the translated brand name AND the flight number string
+            if (!airlineUpper.includes(filterName) && !airlineUpper.includes(filterCode) && !flightNumUpper.includes(filterCode)) {
               return false;
             }
           }
