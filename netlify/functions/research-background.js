@@ -32,10 +32,10 @@ exports.handler = async (event) => {
 
     console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr} (Running in ${hubChunks.length + 1} parallel batches)`);
 
-    // API-Level Airline Filter
-    let trunkAirlineQuery = "";
+    // API-Level Filters (Stops=1 guarantees NO squashed connecting flights from Google)
+    let trunkAirlineQuery = "&stops=1";
     if (trunkFilter) {
-      trunkAirlineQuery = `&airlines=${trunkFilter.trim().toUpperCase()}`;
+      trunkAirlineQuery += `&airlines=${trunkFilter.trim().toUpperCase()}`;
     }
 
     // 2. CONCURRENT API FETCHING
@@ -64,7 +64,8 @@ exports.handler = async (event) => {
 
       try {
         if (cleanHubStr) {
-          const connUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${cleanHubStr}&arrival_id=${cleanFinalStr}&outbound_date=${connectionDate}&type=2&api_key=${serpKey}`;
+          // &stops=1 guarantees connections are also pure nonstop flights
+          const connUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${cleanHubStr}&arrival_id=${cleanFinalStr}&outbound_date=${connectionDate}&type=2&stops=1&api_key=${serpKey}`;
           const [tRes, cRes] = await Promise.all([fetch(trunkUrl), fetch(connUrl)]);
           tData = await tRes.json();
           cData = await cRes.json();
@@ -93,7 +94,6 @@ exports.handler = async (event) => {
     
     fetchPromises.push(directPromise());
 
-    // Merge Data
     const results = await Promise.all(fetchPromises);
     results.forEach(res => {
       if (res.tData.best_flights) trunkData.best_flights.push(...res.tData.best_flights);
@@ -102,7 +102,7 @@ exports.handler = async (event) => {
       if (res.cData.other_flights) connData.other_flights.push(...res.cData.other_flights);
     });
 
-    // 3. STRICT FILTERING, MINIFICATION, & DEDUPLICATION
+    // 3. STRICT FILTERING & DEDUPLICATION
     const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
     const allSearchTargets = [...new Set([...destArray, ...filteredHubs])];
 
@@ -116,25 +116,23 @@ exports.handler = async (event) => {
       return { date: parts[0] || "", time: parts[1] || timeStr };
     };
 
-    // FIXED: Accurately maps the first and last legs so times are never blank
+    // simplified back to singular leg since we forced stops=1
     const minimizeFlight = (f) => {
-      const firstLeg = f.flights?.[0] || f;
-      const lastLeg = f.flights?.[f.flights?.length - 1] || firstLeg;
-
-      const depData = splitDateTime(firstLeg.departure_airport?.time || f.departure_airport?.time);
-      const arrData = splitDateTime(lastLeg.arrival_airport?.time || f.arrival_airport?.time);
+      const leg = f.flights?.[0] || f;
+      const depData = splitDateTime(leg.departure_airport?.time || f.departure_airport?.time);
+      const arrData = splitDateTime(leg.arrival_airport?.time || f.arrival_airport?.time);
 
       return {
-        airline: firstLeg.airline || f.airline || "",
-        flight_number: firstLeg.flight_number || f.flight_number || "",
-        origin: (firstLeg.departure_airport?.id || f.departure_airport?.id || "").toUpperCase(),
-        dest: (lastLeg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
+        airline: leg.airline || f.airline || "",
+        flight_number: leg.flight_number || f.flight_number || "",
+        origin: (leg.departure_airport?.id || f.departure_airport?.id || "").toUpperCase(),
+        dest: (leg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
         dep_date: depData.date,
         dep_time: depData.time,
         arr_date: arrData.date,
         arr_time: arrData.time,
-        duration_mins: f.total_duration || firstLeg.duration || "Unknown",
-        aircraft: firstLeg.airplane || f.airplane || "Unknown"
+        duration_mins: f.total_duration || leg.duration || "Unknown",
+        aircraft: leg.airplane || f.airplane || "Unknown"
       };
     };
 
@@ -150,6 +148,8 @@ exports.handler = async (event) => {
 
     const filterAndMinimizeTrunk = (flights) => {
       return (flights || [])
+        // DOUBLE GUARDRAIL: Delete any flight array that has more than 1 leg
+        .filter(f => !f.flights || f.flights.length === 1) 
         .map(minimizeFlight)
         .filter(f => {
           if (!f.origin || !allowedOrigins.includes(f.origin)) return false;
@@ -170,7 +170,9 @@ exports.handler = async (event) => {
     };
 
     const filterAndMinimizeConnections = (flights) => {
-      return (flights || []).map(minimizeFlight);
+      return (flights || [])
+        .filter(f => !f.flights || f.flights.length === 1) // DOUBLE GUARDRAIL
+        .map(minimizeFlight);
     };
 
     const sortByDuration = (a, b) => {
@@ -179,23 +181,26 @@ exports.handler = async (event) => {
       return durA - durB;
     };
 
+    const rawTrunkCleaned = dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])])).sort(sortByDuration);
+
+    // NEW: We manually separate Direct vs Hubs so Claude doesn't have to guess
+    const directFlightsArray = rawTrunkCleaned.filter(f => destArray.includes(f.dest)).slice(0, 20);
+    const hubFlightsArray = rawTrunkCleaned.filter(f => !destArray.includes(f.dest)).slice(0, 60);
+    const connFlightsArray = dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])])).sort(sortByDuration).slice(0, 150);
+
     const liveFlights = {
-      trunk_flights: dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]))
-        .sort(sortByDuration)
-        .slice(0, 80),
-      connection_flights: dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])]))
-        .sort(sortByDuration)
-        .slice(0, 150)
+      direct_flights: directFlightsArray,
+      hub_flights: hubFlightsArray,
+      connections_from_hubs: connFlightsArray
     };
 
-    const validTrunkDests = [...new Set(liveFlights.trunk_flights.map(f => f.dest))];
-    const validHubs = filteredHubs.filter(h => validTrunkDests.includes(h));
+    const validHubs = [...new Set(hubFlightsArray.map(f => f.dest))];
 
-    console.log(`DEBUG: After filtering: ${liveFlights.trunk_flights.length} valid trunk options remain.`);
+    console.log(`DEBUG: Found ${directFlightsArray.length} Direct Flights and ${hubFlightsArray.length} Hub Flights.`);
     console.log(`DEBUG: Pre-Validated Hubs with actual flights: ${validHubs.join(', ') || "None"}`);
 
-    if (liveFlights.trunk_flights.length === 0) {
-      console.log("CIRCUIT BREAKER: 0 trunk flights found.");
+    if (directFlightsArray.length === 0 && hubFlightsArray.length === 0) {
+      console.log("CIRCUIT BREAKER: 0 flights found.");
       await setDoc(doc(db, "research", userId), { results: JSON.stringify({ direct_flights: [], hub_routes: [] }), timestamp: new Date().toISOString(), status: "complete" });
       return; 
     }
@@ -211,8 +216,8 @@ exports.handler = async (event) => {
     
     CRITICAL DATA INTEGRITY & EXTRACTION RULES:
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
-    2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA.
-    3. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate ONLY these valid hubs: (${validHubs.join(',')}). 
+    2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
+    3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays to build your routes. 
        - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code. 
     4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
     5. NON-REV OPTIMIZATION: Prioritize routes with the shortest total durations and larger widebody aircraft (e.g., 777, 787, A350, A380).
@@ -220,8 +225,8 @@ exports.handler = async (event) => {
        - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks.
        - Start your response exactly with the { character.
        - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
-       - NEVER output "TBD" for times. Extract the exact dep_time and arr_time from the JSON data.
-       - You MUST use this exact JSON schema structure, ensuring arrival_time is included on EVERY flight leg:
+       - NEVER output "TBD".
+       - You MUST use this exact JSON schema structure:
        {
          "direct_flights": [
            { "airline": "UA", "flight_number": "UA 837", "departure_time": "11:40", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct service" }
