@@ -1327,28 +1327,25 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     const jPartnerList = trunkCarriers.filter(c=>AGREEMENTS[c]?.j).map(c=>`${c}`).join(", ");
     const yOnlyList = [...new Set([...trunkCarriers,...connCarriers])].filter(c=>AGREEMENTS[c]&&!AGREEMENTS[c].j).map(c=>`${c}`).join(", ");
 
-    const prompt = `You are a non-rev standby travel researcher for airline employees.
-    Find flight routing options from ${originPromptStr} to ${trip.destination} ${dateStr}.
-    The traveler is an ALASKA AIRLINES employee with ZED/MIBA standby agreements.
-    They want ${cabinJ ? "BUSINESS CLASS (J)" : "ECONOMY (Y)"} on the trunk leg.
-    ${airlineConstraint}
-    STRICT RULE — ONLY include airlines from these lists:
-    BUSINESS CLASS (J) agreement airlines: ${jPartnerList}
-    ECONOMY ONLY (Y) airlines — NO business class: ${yOnlyList}
-    TRUNK LEG CARRIER${trunkFilter ? "" : "S"}: ${trunkNames}
-    CONNECTION CARRIERS (economy): ${connNames}
-    ${routingHubInstructions}
-    
-    // --- ADDED LENGTH CONSTRAINTS ---
-    STRICT LIMIT: Provide a maximum of 12 total routing options across direct and hub routes.
-    Keep 'notes' and 'hub_notes' extremely concise (under 100 characters). 
-    Do NOT repeat information. If the data is too large, prioritize the most time-efficient routes.
-    
-    Return ONLY valid JSON:
-    {
-      "direct_flights": [{"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily","notes":"Direct flagship service."}],
-      "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"Quick connection via HNL."}]
-    }`;
+  const prompt = `You are a strict data extraction engine for a non-rev travel app.
+Your task is to map flight schedules into a JSON response.
+
+STRICT DATA INTEGRITY RULES:
+1. ORIGIN VALIDATION: Only include flights where the origin is EXACTLY "${originPromptStr}". 
+   - If the search data shows a flight from ORD or LAX, DISCARD it.
+2. DESTINATION VALIDATION: Only include flights that end at "${trip.destination}" or one of these hubs: ${dynamicHubs}.
+3. NO HALLUCINATIONS: If you cannot find a specific flight number for a specific route in the data, do NOT include it. Accuracy is more important than quantity.
+4. FLIGHT NUMBER CHECK: Ensure the flight number (e.g., UA 837) actually serves the SFO-HND route in the provided data.
+
+STRICT LIMITS:
+- Max 10 total routing options.
+- Keep 'note' strings under 60 characters.
+
+Return ONLY valid JSON:
+{
+  "direct_flights": [{"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily","notes":"Direct flagship service."}],
+  "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"Quick connection via HNL."}]
+}`;
 
   addLog("Initiating Claude Research (Priority 1)...");
     let parsed = null;
@@ -1797,25 +1794,65 @@ const a = AGREEMENTS[carrierCode] || {};
       </div>
       {filtered.length===0?(<div style={{textAlign:"center",padding:"40px",background:"#fff",borderRadius:12,border:"1px solid #e5e7eb"}}><div style={{color:"#6b7280"}}>No routes match filter.</div></div>):(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {filtered.map((r,ri)=>{const tm=TIER_META[r.tier];const cm=clearMsg(r.open,r.listed);const a=AGREEMENTS[r.trunkCarrier];const seatTs=ud[r.id]?.openSeats_at;
+          {filtered.map((r,ri)=>{
+            const isUnited = r.airline === "UA" || r.airline === "United" || (r.flight_number && r.flight_number.startsWith("UA"));
+            const isPartner = AGREEMENTS[r.airline] !== undefined || AGREEMENTS[r.trunkCarrier] !== undefined;
+            const tm=TIER_META[r.tier];
+            const cm=clearMsg(r.open,r.listed);
+            const a=AGREEMENTS[r.trunkCarrier];
+            const seatTs=ud[r.id]?.openSeats_at;
             return(<div key={r.id} style={{borderRadius:12,overflow:"hidden",border:`1.5px solid ${tm.border}`,opacity:r.open===0?.4:1}}>
               <div style={{background:tm.bg,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12,borderBottom:`1px solid ${tm.border}`}}>
                 <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,minWidth:70}}>
                     <span style={{fontSize:9,color:"#9ca3af",fontFamily:"monospace"}}>#{ri+1}</span>
                     <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:99,background:tm.badge,color:tm.badgeText,whiteSpace:"nowrap"}}>{tm.label}</span>
+                    {/* --- STEP 2: ELIGIBILITY BADGE --- */}
+            <span style={{
+              fontSize: 9, 
+              fontWeight: 800, 
+              marginTop: 4,
+              padding: "2px 6px",
+              borderRadius: 4,
+              background: isPartner ? "#dcfce7" : "#fee2e2", 
+              color: isPartner ? "#166534" : "#991b1b",
+              border: `1px solid ${isPartner ? "#bbf7d0" : "#fecaca"}`
+            }}>
+              {isPartner ? "✓ AGMT" : "✗ NO AGMT"}
+            </span>
                     {r.cabinAvail==="J"&&<span style={{fontSize:8,color:"#d97706",fontFamily:"monospace"}}>J avail</span>}
                     {r.isHome&&<span style={{fontSize:8,color:"#065f46",fontWeight:700}}>HOME ★</span>}
                   </div>
                   <div style={{flex:1}}>
-                    <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                      <span style={{fontSize:18,fontWeight:900,color:"#111827"}}>{r.fullFlightNum || r.flight_number}</span>
-                      <span style={{fontSize:11,color:"#9ca3af",fontFamily:"monospace"}}>{a?.name || r.trunkCarrier || r.airline}</span>
-                      {a?.alliance&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:"#f3f4f6",color:"#6b7280"}}>{a.alliance}</span>}
-                      <span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",padding:"1px 7px",borderRadius:99,fontFamily:"monospace"}}>{r.aircraft}</span>
-                      {r.isDirect&&<span style={{fontSize:10,background:"#111827",color:"#fff",padding:"1px 8px",borderRadius:99,fontWeight:700}}>DIRECT</span>}
-                    </div>
-                    <div style={{fontSize:11,color:"#9ca3af"}}>{trip.origin} → <strong style={{color:"#6b7280"}}>{r.hub || r.destination}</strong> · Dep <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.sfoDep || r.departure_time}</span> · Arr <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.hubArr || r.arrival_time}</span></div>
+  <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:4}}>
+    <span style={{fontSize:18,fontWeight:900,color:"#111827"}}>{r.fullFlightNum || r.flight_number}</span>
+    <span style={{fontSize:11,color:"#9ca3af",fontFamily:"monospace"}}>{a?.name || r.trunkCarrier || r.airline}</span>
+    {a?.alliance && <span style={{fontSize:9,padding:"1px 6px",borderRadius:99,background:"#f3f4f6",color:"#6b7280"}}>{a.alliance}</span>}
+    {/* Moved these inside the same flex-wrap row for better alignment */}
+    <span style={{fontSize:10,background:"#f3f4f6",color:"#6b7280",padding:"1px 7px",borderRadius:99,fontFamily:"monospace"}}>{r.aircraft}</span>
+    {r.isDirect && <span style={{fontSize:10,background:"#111827",color:"#fff",padding:"1px 8px",borderRadius:99,fontWeight:700}}>DIRECT</span>}
+  </div>
+
+  {/* United Rules - Appears only for UA flights */}
+  {isUnited && (
+    <div style={{
+      margin: "8px 0 12px 0",
+      padding: "8px 12px",
+      background: "#eff6ff",
+      borderLeft: "4px solid #3b82f6",
+      borderRadius: "0 6px 6px 0",
+      fontSize: "11px",
+      color: "#1e40af"
+    }}>
+      <strong>United Rules:</strong> {AIRLINE_RULES.UA.listing} | {AIRLINE_RULES.UA.dressCode}
+    </div>
+  )}
+
+  <div style={{fontSize:11,color:"#9ca3af"}}>
+    {trip.origin} → <strong style={{color:"#6b7280"}}>{r.hub || r.destination}</strong> · 
+    Dep <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.sfoDep || r.departure_time}</span> · 
+    Arr <span style={{fontFamily:"monospace",color:"#6b7280"}}>{r.hubArr || r.arrival_time}</span>
+  </div>
                     {r.note&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2,fontStyle:"italic"}}>{r.note}</div>}
                     {seatTs&&<div style={{fontSize:9,color:"#d1d5db",marginTop:2}}>Seats updated {new Date(seatTs).toLocaleString()}</div>}
                   </div>
