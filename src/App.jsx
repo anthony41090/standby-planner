@@ -8,6 +8,42 @@ import {
 } from "./firebase-storage";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
+// ─── Global City-to-Airport Mapping ──────────────────────────────────────
+// Maps common city names to all relevant IATA codes for multi-hub searching
+const cityToAirports = {
+  "Tokyo": "HND,NRT",
+  "London": "LHR,LGW,STN,LTN,LCY",
+  "New York": "JFK,EWR,LGA",
+  "Chicago": "ORD,MDW",
+  "Los Angeles": "LAX,BUR,SNA,ONT",
+  "San Francisco": "SFO,OAK,SJC",
+  "Washington DC": "IAD,DCA,BWI",
+  "Miami": "MIA,FLL,PBI",
+  "Dallas": "DFW,DAL",
+  "Houston": "IAH,HOU",
+  "Toronto": "YYZ,YTZ",
+  "Paris": "CDG,ORY,BVA",
+  "Milan": "MXP,LIN,BGY",
+  "Rome": "FCO,CIA",
+  "Istanbul": "IST,SAW",
+  "Seoul": "ICN,GMP",
+  "Beijing": "PEK,PKX",
+  "Shanghai": "PVG,SHA",
+  "Bangkok": "BKK,DMK",
+  "Osaka": "KIX,ITM",
+  "Taipei": "TPE,TSA",
+  "Sao Paulo": "GRU,CGH,VCP",
+  "Rio de Janeiro": "GIG,SDU",
+  "Buenos Aires": "EZE,AEP"
+};
+
+const originCityToAirports = {
+  "NYC": "JFK,EWR,LGA",
+  "CHI": "ORD,MDW",
+  "SFO": "SFO,OAK,SJC", // Added the Bay Area for when you're home!
+  "LAX": "LAX,SNA,BUR"
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NON-REV STANDBY PLANNER v3
 // Alaska Airlines ZED/MIBA · Full agreement database · Any origin → Any dest
@@ -1217,12 +1253,18 @@ function Research({trip,onDone,onSkip}){
 
   async function run(){
     setStatus("searching");
+
+    // --- 1. RESOLVE GLOBAL CITY-TO-AIRPORT MAPPINGS ---
+    // Handle Origins (e.g., NYC -> JFK,EWR,LGA)
+    const originInput = trip.origin.toUpperCase();
+    const originCode = originCityToAirports[originInput] || originAirports[0];
+    
+    // Handle Destinations (e.g., Tokyo -> HND,NRT)
+    const destInput = trip.destination.split(",")[0].trim();
+    const searchCode = cityToAirports[destInput] || (trip.destCodes && trip.destCodes.length > 0 ? trip.destCodes[0] : destInput);
+
     // Resolve origin airports — may be multiple for a city (e.g., SFO/OAK/SJC for San Francisco)
-    const originAirports = (trip.originCodes && trip.originCodes.length > 0) ? trip.originCodes : [trip.origin];
-    const originStr = originAirports.join("/");
-    const originPromptStr = originAirports.length > 1
-      ? `${originAirports.join(", ")} (all airports serving ${trip.origin})`
-      : originAirports[0];
+    const originStr = originCode.split(",").join("/");
     addLog(`Researching ${originStr} → ${trip.destination}…`);
 
     // Detect region — check both destination AND origin (for reverse trips like Tokyo→SFO)
@@ -1306,71 +1348,67 @@ function Research({trip,onDone,onSkip}){
 
       const trunkLabel = trunkFilter ? (AGREEMENTS[trunkFilter]?.name||trunkFilter) : "UA/AS";
       routingHubInstructions = `
-MANDATORY ROUTING HUBS TO CHECK — search for ${trunkLabel} flights to ALL of these from ${originPromptStr}:
+MANDATORY ROUTING HUBS TO CHECK — search for ${trunkLabel} flights to ALL of these from ${originCode}:
 ${directHubs.length>0?`
 ${trunkLabel} ROUTES TO ASIAN HUBS (check each one — do NOT skip any):
-${directHubs.map(h=>`- ${originPromptStr} → ${h.code} (${h.name}): ${h.note}${h.connPartners.length>0?` → then connections on ${h.connPartners.join("/")} to final destination`:""}`).join("\n")}
+${directHubs.map(h=>`- ${originCode} → ${h.code} (${h.name}): ${h.note}${h.connPartners.length>0?` → then connections on ${h.connPartners.join("/")} to final destination`:""}`).join("\n")}
 `:""}${partnerHubs.length>0?`
 PARTNER HUB ROUTES:
 ${partnerHubs.map(h=>`- Via ${h.code} (${h.name}): ${h.note}. Connections: ${h.connPartners.join(", ")}`).join("\n")}
 `:""}
-You MUST include a hub_route entry for EACH hub where you find a viable ${trunkLabel} flight from ${originPromptStr}. Do not skip any hub just because another exists.`;
+You MUST include a hub_route entry for EACH hub where you find a viable ${trunkLabel} flight from ${originCode}. Do not skip any hub just because another exists.`;
       addLog(`Routing hubs: ${hubs.map(h=>h.code).join(", ")}`);
     }
 
-    // Build the airline constraint section of the prompt
+     // Build the airline constraint section of the prompt
     const airlineConstraint = trunkFilter
-      ? `\nIMPORTANT: The traveler has selected ${AGREEMENTS[trunkFilter]?.name||trunkFilter} (${trunkFilter}) as their ONLY trunk airline. Search ONLY for ${trunkFilter} flights from ${originPromptStr} to hub airports. Do NOT include flights on other airlines for the trunk leg. Connections from the hub to the final destination can be on ANY of the connection carriers listed above.`
+      ? `\nIMPORTANT: The traveler has selected ${AGREEMENTS[trunkFilter]?.name||trunkFilter} (${trunkFilter}) as their ONLY trunk airline. Search ONLY for ${trunkFilter} flights from ${originCode} to hub airports. Do NOT include flights on other airlines for the trunk leg. Connections from the hub to the final destination can be on ANY of the connection carriers listed above.`
       : `\nCRITICAL: Alaska Airlines (AS) and Hawaiian Airlines (HA) are the traveler's HOME airlines — highest standby priority. Always search AS/HA routes first, including via Honolulu (HNL).`;
 
     // Build explicit J vs Y airline lists for the prompt
     const jPartnerList = trunkCarriers.filter(c=>AGREEMENTS[c]?.j).map(c=>`${c}`).join(", ");
     const yOnlyList = [...new Set([...trunkCarriers,...connCarriers])].filter(c=>AGREEMENTS[c]&&!AGREEMENTS[c].j).map(c=>`${c}`).join(", ");
-    // --- NEW: DYNAMIC PROXIMITY HUBS ---
-    const cityToCode = { "TOKYO": "HND", "LONDON": "LHR", "PARIS": "CDG", "NEW YORK": "JFK" };
-    const inputCity = trip.destination.split(",")[0].trim().toUpperCase();
-    const searchCode = (trip.destCodes && trip.destCodes.length > 0) ? trip.destCodes[0] : (cityToCode[inputCity] || inputCity);
+   
 
-    const destCoords = HUB_COORDINATES[searchCode];
+    // --- 2. DYNAMIC PROXIMITY HUBS ---
+    // Use the first airport in the string for coordinate math (e.g., HND for Tokyo)
+    const mathCode = searchCode.includes(",") ? searchCode.split(",")[0] : searchCode;
+    const destCoords = HUB_COORDINATES[mathCode.toUpperCase()];
     let hubArray = [];
 
     if (destCoords) {
       hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
-        if (hub === searchCode) return false;
+        // Don't suggest a hub that is actually one of our final destinations
+        if (searchCode.includes(hub)) return false;
         const hCoords = HUB_COORDINATES[hub];
         if (!hCoords) return false;
         return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 1600; 
       }).slice(0, 5);
-      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${searchCode}.`);
+      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${mathCode}.`);
     } else {
       hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
-      addLog(`Coordinates unknown for ${searchCode}. Using global fallbacks.`);
+      addLog(`Coordinates unknown for ${mathCode}. Using global fallbacks.`);
     }
     const dynamicHubs = hubArray.join(",");
-    // -----------------------------------
-  const prompt = `You are a helpful travel assistant for a non-rev standby app.
+
+    // --- 3. BUILD THE PROMPT ---
+    const prompt = `You are a helpful travel assistant for a non-rev standby app.
 Your task is to find flight schedules and map them into JSON.
 
+${airlineConstraint}
+${routingHubInstructions}
+
 RULES:
-1. ORIGIN: Find flights departing from ${originAirports.join(" or ")}.
-2. DESTINATION: Find flights arriving at ${trip.destination} (including NRT or HND) or these hubs: ${dynamicHubs}.
-3. AIRLINES: Focus on UA, AS, HA, and their partners (JAL, ANA, Zipair, Cathay, etc.) but all airlines are still eligible.
-4. ACCURACY: Use real flight numbers and times from your search.
+1. ORIGIN: Find flights departing from ${originCode.split(",").join(" or ")}.
+2. DESTINATION: Find ALL non-stop flights from ${originCode.split(",").join("/")} to ${searchCode}. This is your top priority.
+3. HUB ROUTING: Find connections via these hubs: ${dynamicHubs}. Select ONLY the best 6 hub routes total.
+4. AIRLINES: Focus on UA, AS, HA, and primary partners, but all major carriers are eligible.
+5. ACCURACY: Use real flight numbers. If aircraft or duration is missing, use placeholders (Boeing/11).
 
 Return ONLY valid JSON in this format:
 {
   "direct_flights": [
-    {
-      "airline": "UA", 
-      "flight_number": "UA 837", 
-      "departure_time": "11:40", 
-      "arrival_time": "15:00", 
-      "aircraft": "777", 
-      "origin": "SFO", 
-      "destination": "NRT", 
-      "duration_hrs": 11, 
-      "notes": "Direct United service"
-    }
+    { "airline": "UA", "flight_number": "UA 837", "departure_time": "11:40", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct United service" }
   ],
   "hub_routes": [
     {
@@ -1385,16 +1423,12 @@ Return ONLY valid JSON in this format:
   ]
 }`;
 
-  addLog("Initiating Claude Research (Priority 1)...");
-    let parsed = null;
+    addLog("Initiating Claude Research (Priority 1)...");
 
     try {
-      // 1. CLEAR THE DATABASE FIRST (Deep Reset)
       const { doc, setDoc, getFirestore } = await import("firebase/firestore");
       const db = getFirestore();
       
-      // We set results to an empty array string and status to processing.
-      // This forces the UI to ignore old data and show the spinner immediately.
       await setDoc(doc(db, "research", "anthony_alonso"), { 
         status: "processing", 
         results: "[]", 
@@ -1403,20 +1437,19 @@ Return ONLY valid JSON in this format:
 
       addLog("Database reset. Triggering fresh research...");
 
-      // 2. NOW trigger the Background Function
-  const response = await fetch("/.netlify/functions/research-background", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      prompt: prompt,
-      userId: "anthony_alonso",
-      // Send only the first airport (SFO) to the search engine for better hits
-      origin: originAirports[0], 
-      finalDestination: searchCode, // Uses "NRT" or "HND" instead of "Tokyo"
-      hubs: dynamicHubs, // Now limited to your 5 closest matches
-      date: trip.travelDate
-    })
-  });
+      // --- 4. TRIGGER THE BACKGROUND FUNCTION ---
+      const response = await fetch("/.netlify/functions/research-background", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          prompt: prompt,
+          userId: "anthony_alonso",
+          origin: originCode,      // Sends "JFK,EWR,LGA" if NYC selected
+          finalDestination: searchCode, // Sends "HND,NRT" if Tokyo selected
+          hubs: dynamicHubs,
+          date: trip.travelDate
+        })
+      });
 
       if (response.status === 202) {
         addLog("Research task started in background (bypass 60s timeout)...");
