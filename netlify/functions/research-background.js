@@ -18,13 +18,11 @@ const db = getFirestore(app);
 export const handler = async (event) => {
   const { prompt, userId } = JSON.parse(event.body);
 
-  // UPDATED: Priority check for the variable name in your dashboard
   const key = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
 
   try {
     console.log(`Research started for: ${userId}`);
     
-    // Safety check to log if the key is missing before trying to use it
     if (!key) {
       console.error("CRITICAL ERROR: No Anthropic key found in environment variables (VITE_ANTHROPIC_KEY).");
       throw new Error("Missing API Key");
@@ -46,7 +44,8 @@ export const handler = async (event) => {
           role: "user", 
           content: prompt + `
 
-IMPORTANT: Focus only on the top 5 most reliable hub routes. 
+IMPORTANT: You are under a strict execution time limit. Do NOT perform deep or exhaustive web searches. You may perform a maximum of ONE targeted web search to verify current routes. You must finish processing and return the data in under 2 minutes.
+
 CRITICAL: You MUST respond with strictly valid JSON. Do not include any conversational text, markdown formatting, emojis, or explanations. 
 Your output must exactly match this JSON schema:
 {
@@ -64,8 +63,8 @@ Your output must exactly match this JSON schema:
   ]
 }` 
         }]
-      }) // <-- RESTORED: Closes JSON.stringify
-    }); // <-- RESTORED: Closes fetch
+      }) 
+    }); 
 
     const data = await response.json();
 
