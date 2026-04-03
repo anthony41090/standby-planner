@@ -13,6 +13,17 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 // Alaska Airlines ZED/MIBA · Full agreement database · Any origin → Any dest
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const uid = () => Math.random().toString(36).substr(2, 9);
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 3958.8; // Radius of the Earth in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 // ─── Global Research Hubs & Geo-Data ──────────────────────────────────────
 // Comprehensive list of major international gateways for all partner alliances
 const MAJOR_GLOBAL_HUBS = [
@@ -65,15 +76,6 @@ const HUB_COORDINATES = {
   "BNE": { lat: -27.384, lon: 153.117 }
 };
 
-// Helper: Haversine distance formula
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 3958.8; // Earth radius in miles
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
 // ─── Complete Agreement Database ─────────────────────────────────────────────
 // J = Business class ZED agreement | Y = Economy only | null = not a partner
 const AGREEMENTS = {
@@ -1326,7 +1328,28 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     // Build explicit J vs Y airline lists for the prompt
     const jPartnerList = trunkCarriers.filter(c=>AGREEMENTS[c]?.j).map(c=>`${c}`).join(", ");
     const yOnlyList = [...new Set([...trunkCarriers,...connCarriers])].filter(c=>AGREEMENTS[c]&&!AGREEMENTS[c].j).map(c=>`${c}`).join(", ");
+    // --- NEW: DYNAMIC PROXIMITY HUBS ---
+    const cityToCode = { "TOKYO": "HND", "LONDON": "LHR", "PARIS": "CDG", "NEW YORK": "JFK" };
+    const inputCity = trip.destination.split(",")[0].trim().toUpperCase();
+    const searchCode = (trip.destCodes && trip.destCodes.length > 0) ? trip.destCodes[0] : (cityToCode[inputCity] || inputCity);
 
+    const destCoords = HUB_COORDINATES[searchCode];
+    let hubArray = [];
+
+    if (destCoords) {
+      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
+        if (hub === searchCode) return false;
+        const hCoords = HUB_COORDINATES[hub];
+        if (!hCoords) return false;
+        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 2200; 
+      }).slice(0, 12);
+      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${searchCode}.`);
+    } else {
+      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
+      addLog(`Coordinates unknown for ${searchCode}. Using global fallbacks.`);
+    }
+    const dynamicHubs = hubArray.join(",");
+    // -----------------------------------
   const prompt = `You are a strict data extraction engine for a non-rev travel app.
 Your task is to map flight schedules into a JSON response.
 
@@ -1349,29 +1372,6 @@ Return ONLY valid JSON:
 
   addLog("Initiating Claude Research (Priority 1)...");
     let parsed = null;
-
-   // --- NEW: DYNAMIC PROXIMITY HUBS ---
-    const cityToCode = { "TOKYO": "HND", "LONDON": "LHR", "PARIS": "CDG", "NEW YORK": "JFK" };
-    const inputCity = trip.destination.split(",")[0].trim().toUpperCase();
-    const searchCode = (trip.destCodes && trip.destCodes.length > 0) ? trip.destCodes[0] : (cityToCode[inputCity] || inputCity);
-
-    const destCoords = HUB_COORDINATES[searchCode];
-    let hubArray = [];
-
-    if (destCoords) {
-      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
-        if (hub === searchCode) return false;
-        const hCoords = HUB_COORDINATES[hub];
-        if (!hCoords) return false;
-        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 2200; 
-      }).slice(0, 12);
-      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${searchCode}.`);
-    } else {
-      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
-      addLog(`Coordinates unknown for ${searchCode}. Using global fallbacks.`);
-    }
-    const dynamicHubs = hubArray.join(",");
-    // -----------------------------------
 
     try {
       // 1. CLEAR THE DATABASE FIRST (Deep Reset)
