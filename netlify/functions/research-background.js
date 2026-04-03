@@ -23,7 +23,6 @@ exports.handler = async (event) => {
     const filteredHubs = hubArray.filter(h => !destArray.includes(h));
     const cleanFinalStr = destArray.join(',');
 
-    // Google Flights API limit is ~7 arrival airports. We batch hubs into chunks of 5.
     const chunkSize = 5;
     const hubChunks = [];
     for (let i = 0; i < filteredHubs.length; i += chunkSize) {
@@ -32,6 +31,12 @@ exports.handler = async (event) => {
     if (hubChunks.length === 0) hubChunks.push([]); 
 
     console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr} (Running in ${hubChunks.length + 1} parallel batches)`);
+
+    // API-Level Airline Filter
+    let trunkAirlineQuery = "";
+    if (trunkFilter) {
+      trunkAirlineQuery = `&airlines=${trunkFilter.trim().toUpperCase()}`;
+    }
 
     // 2. CONCURRENT API FETCHING
     let trunkData = { best_flights: [], other_flights: [] };
@@ -52,7 +57,7 @@ exports.handler = async (event) => {
         connectionDate = nextDay.toISOString().split('T')[0];
       }
 
-      const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${allSearchTargetsStr}&outbound_date=${date}&type=2&api_key=${serpKey}`;
+      const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${allSearchTargetsStr}&outbound_date=${date}&type=2${trunkAirlineQuery}&api_key=${serpKey}`;
       
       let tData = { best_flights: [], other_flights: [] };
       let cData = { best_flights: [], other_flights: [] };
@@ -73,10 +78,10 @@ exports.handler = async (event) => {
       return { tData, cData };
     });
 
-    // BATCH B: Dedicated Direct Flights (Guarantees direct flights aren't buried by API limits)
+    // BATCH B: Dedicated Direct Flights
     const directPromise = async () => {
       try {
-        const directUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${cleanFinalStr}&outbound_date=${date}&type=2&api_key=${serpKey}`;
+        const directUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${cleanFinalStr}&outbound_date=${date}&type=2${trunkAirlineQuery}&api_key=${serpKey}`;
         const res = await fetch(directUrl);
         const tData = await res.json();
         return { tData, cData: { best_flights: [], other_flights: [] } };
@@ -88,7 +93,7 @@ exports.handler = async (event) => {
     
     fetchPromises.push(directPromise());
 
-    // Wait for all batches to finish and merge the data
+    // Merge Data
     const results = await Promise.all(fetchPromises);
     results.forEach(res => {
       if (res.tData.best_flights) trunkData.best_flights.push(...res.tData.best_flights);
@@ -97,20 +102,12 @@ exports.handler = async (event) => {
       if (res.cData.other_flights) connData.other_flights.push(...res.cData.other_flights);
     });
 
-    const rawTrunkTotal = trunkData.best_flights.length + trunkData.other_flights.length;
-    console.log(`API RAW TRUNK FLIGHTS RETURNED (Merged): ${rawTrunkTotal}`);
-
     // 3. STRICT FILTERING, MINIFICATION, & DEDUPLICATION
     const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
     const allSearchTargets = [...new Set([...destArray, ...filteredHubs])];
 
     const AIRLINE_NAMES = {
-      "UA": "UNITED", "AA": "AMERICAN", "DL": "DELTA", "AS": "ALASKA", "HA": "HAWAIIAN", "WN": "SOUTHWEST", "B6": "JETBLUE", "F9": "FRONTIER", "NK": "SPIRIT", "SY": "SUN COUNTRY", "G4": "ALLEGIANT", "MX": "BREEZE", "XE": "JSX",
-      "AC": "AIR CANADA", "WS": "WESTJET", "PD": "PORTER", "TS": "TRANSAT", "AM": "AEROMEXICO", "Y4": "VOLARIS", "VB": "VIVA",
-      "BA": "BRITISH", "LH": "LUFTHANSA", "AF": "AIR FRANCE", "KL": "KLM", "IB": "IBERIA", "AY": "FINNAIR", "SK": "SAS", "TP": "TAP", "EI": "AER LINGUS", "AZ": "ITA", "U2": "EASYJET", "FR": "RYANAIR", "W6": "WIZZ", "VS": "VIRGIN ATLANTIC", "LX": "SWISS", "OS": "AUSTRIAN", "SN": "BRUSSELS", "TK": "TURKISH", "A3": "AEGEAN", "FI": "ICELANDAIR", "UX": "AIR EUROPA", "VY": "VUELING", "EW": "EUROWINGS", "DE": "CONDOR", "LO": "LOT", "B0": "LA COMPAGNIE", "4Y": "DISCOVER", "N0": "NORSE",
-      "JL": "JAPAN", "NH": "NIPPON", "KE": "KOREAN", "OZ": "ASIANA", "CX": "CATHAY", "BR": "EVA", "CI": "CHINA AIRLINES", "SQ": "SINGAPORE", "MH": "MALAYSIA", "TG": "THAI", "VN": "VIETNAM", "PR": "PHILIPPINE", "GA": "GARUDA", "CA": "AIR CHINA", "MU": "CHINA EASTERN", "CZ": "CHINA SOUTHERN", "HU": "HAINAN", "3U": "SICHUAN", "HO": "JUNEYAO", "MF": "XIAMEN", "ZH": "SHENZHEN", "SC": "SHANDONG", "UO": "EXPRESS", "HX": "HONG KONG", "JQ": "JETSTAR", "GK": "JETSTAR", "TR": "SCOOT", "5J": "CEBU", "ZG": "ZIPAIR", "MM": "PEACH", "IT": "TIGERAIR", "D7": "AIRASIA", "AK": "AIRASIA", "BX": "AIR BUSAN", "LJ": "JINAIR", "7C": "JEJU", "TW": "T'WAY", "RS": "AIR SEOUL", "ZE": "EASTAR",
-      "EK": "EMIRATES", "QR": "QATAR", "EY": "ETIHAD", "SV": "SAUDIA", "RJ": "ROYAL JORDANIAN", "GF": "GULF", "WY": "OMAN", "LY": "EL AL", "SA": "SOUTH AFRICAN", "ET": "ETHIOPIAN", "MS": "EGYPTAIR", "AT": "ROYAL AIR", "KQ": "KENYA", "XY": "FLYNAS",
-      "LA": "LATAM", "CM": "COPA", "AV": "AVIANCA", "AR": "AEROLINEAS ARGENTINAS", "G3": "GOL", "AD": "AZUL", "QF": "QANTAS", "VA": "VIRGIN AUSTRALIA", "NZ": "NEW ZEALAND", "FJ": "FIJI"
+      "UA": "UNITED", "AA": "AMERICAN", "DL": "DELTA", "AS": "ALASKA", "HA": "HAWAIIAN"
     };
 
     const splitDateTime = (timeStr) => {
@@ -119,22 +116,25 @@ exports.handler = async (event) => {
       return { date: parts[0] || "", time: parts[1] || timeStr };
     };
 
+    // FIXED: Accurately maps the first and last legs so times are never blank
     const minimizeFlight = (f) => {
-      const leg = f.flights?.[0] || f;
-      const depData = splitDateTime(leg.departure_airport?.time || f.departure_airport?.time);
-      const arrData = splitDateTime(leg.arrival_airport?.time || f.arrival_airport?.time);
+      const firstLeg = f.flights?.[0] || f;
+      const lastLeg = f.flights?.[f.flights?.length - 1] || firstLeg;
+
+      const depData = splitDateTime(firstLeg.departure_airport?.time || f.departure_airport?.time);
+      const arrData = splitDateTime(lastLeg.arrival_airport?.time || f.arrival_airport?.time);
 
       return {
-        airline: leg.airline || f.airline || "",
-        flight_number: leg.flight_number || f.flight_number || "",
-        origin: (leg.departure_airport?.id || f.departure_airport?.id || "").toUpperCase(),
-        dest: (leg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
+        airline: firstLeg.airline || f.airline || "",
+        flight_number: firstLeg.flight_number || f.flight_number || "",
+        origin: (firstLeg.departure_airport?.id || f.departure_airport?.id || "").toUpperCase(),
+        dest: (lastLeg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
         dep_date: depData.date,
         dep_time: depData.time,
         arr_date: arrData.date,
         arr_time: arrData.time,
-        duration_mins: f.total_duration || leg.duration || "Unknown",
-        aircraft: leg.airplane || f.airplane || "Unknown"
+        duration_mins: f.total_duration || firstLeg.duration || "Unknown",
+        aircraft: firstLeg.airplane || f.airplane || "Unknown"
       };
     };
 
@@ -173,7 +173,6 @@ exports.handler = async (event) => {
       return (flights || []).map(minimizeFlight);
     };
 
-    // Non-Rev Sorting Engine (Ignores price, sorts strictly by shortest flight duration)
     const sortByDuration = (a, b) => {
       const durA = typeof a.duration_mins === 'number' ? a.duration_mins : 9999;
       const durB = typeof b.duration_mins === 'number' ? b.duration_mins : 9999;
@@ -189,20 +188,15 @@ exports.handler = async (event) => {
         .slice(0, 150)
     };
 
-    // HUB PRE-VALIDATION: We scan the data to see which hubs ACTUALLY have trunk flights, and only pass those to Claude.
     const validTrunkDests = [...new Set(liveFlights.trunk_flights.map(f => f.dest))];
     const validHubs = filteredHubs.filter(h => validTrunkDests.includes(h));
 
-    console.log(`DEBUG: After deduplication & filtering: ${liveFlights.trunk_flights.length} valid trunk options remain.`);
+    console.log(`DEBUG: After filtering: ${liveFlights.trunk_flights.length} valid trunk options remain.`);
     console.log(`DEBUG: Pre-Validated Hubs with actual flights: ${validHubs.join(', ') || "None"}`);
 
     if (liveFlights.trunk_flights.length === 0) {
-      console.log("CIRCUIT BREAKER: 0 trunk flights found. Aborting Claude to prevent hallucinations.");
-      await setDoc(doc(db, "research", userId), {
-        results: JSON.stringify({ direct_flights: [], hub_routes: [] }),
-        timestamp: new Date().toISOString(),
-        status: "complete"
-      });
+      console.log("CIRCUIT BREAKER: 0 trunk flights found.");
+      await setDoc(doc(db, "research", userId), { results: JSON.stringify({ direct_flights: [], hub_routes: [] }), timestamp: new Date().toISOString(), status: "complete" });
       return; 
     }
 
@@ -216,19 +210,34 @@ exports.handler = async (event) => {
     ${JSON.stringify(liveFlights)}
     
     CRITICAL DATA INTEGRITY & EXTRACTION RULES:
-    1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights or using pre-trained knowledge. Every single flight number, airline, departure time, and arrival time you output MUST be a direct copy-paste from the CLEAN LIVE DATA provided above.
-    2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA. This is your top priority.
-    3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections.
-    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate ONLY these valid hubs: (${validHubs.join(',')}). 
-       - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code. (e.g. Do not assign an ICN flight to KIX).
-    5. STRICT AIRLINE: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them, you MUST add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
-    7. STRICT JSON FORMATTING: 
-       - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks (e.g., no \`\`\`json).
+    1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
+    2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA.
+    3. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate ONLY these valid hubs: (${validHubs.join(',')}). 
+       - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code. 
+    4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
+    5. NON-REV OPTIMIZATION: Prioritize routes with the shortest total durations and larger widebody aircraft (e.g., 777, 787, A350, A380).
+    6. STRICT JSON FORMATTING & SCHEMA: 
+       - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks.
        - Start your response exactly with the { character.
        - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
-       - DO NOT leave trailing commas at the end of any objects or arrays.
-    8. NON-REV OPTIMIZATION (CRITICAL): Standby travelers do not care about ticket prices. When selecting your 10 hub routes, your ONLY goal is to maximize the probability of getting a seat while minimizing travel time. Prioritize routes with the shortest total durations and larger widebody aircraft (e.g., 777, 787, A350, A380, A330) which hold more passengers.`;
+       - NEVER output "TBD" for times. Extract the exact dep_time and arr_time from the JSON data.
+       - You MUST use this exact JSON schema structure, ensuring arrival_time is included on EVERY flight leg:
+       {
+         "direct_flights": [
+           { "airline": "UA", "flight_number": "UA 837", "departure_time": "11:40", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct service" }
+         ],
+         "hub_routes": [
+           {
+             "hub_code": "ICN",
+             "hub_name": "Seoul",
+             "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_time": "10:30", "arrival_time": "15:30", "aircraft": "777", "destination": "ICN" },
+             "connections": [
+               { "airline": "OZ", "flight_number": "OZ 102", "destination": "NRT", "departure_time": "18:00", "arrival_time": "20:30", "layover_hrs": 3 }
+             ],
+             "hub_notes": "Connect via Seoul."
+           }
+         ]
+       }`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
