@@ -1340,7 +1340,7 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           prompt: prompt, // <-- FIXED: Use your actual variable named 'prompt'
-          userId: uid,
+          userId: "anthony_alonso",
           origin: trip.origin, // <-- Grab origin from your trip object
           destination: trip.destination, // <-- Grab destination from your trip object
           date: trip.travelDate // <-- Grab travel date from your trip object
