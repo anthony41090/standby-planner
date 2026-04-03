@@ -29,24 +29,22 @@ exports.handler = async (event) => {
     for (let i = 0; i < filteredHubs.length; i += chunkSize) {
       hubChunks.push(filteredHubs.slice(i, i + chunkSize));
     }
-    // Ensure at least one batch runs even if there are 0 hubs (for direct flights)
     if (hubChunks.length === 0) hubChunks.push([]); 
 
-    console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr} (Running in ${hubChunks.length} parallel batches)`);
+    console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr} (Running in ${hubChunks.length + 1} parallel batches)`);
 
     // 2. CONCURRENT API FETCHING
     let trunkData = { best_flights: [], other_flights: [] };
     let connData = { best_flights: [], other_flights: [] };
 
+    // BATCH A: Hub Chunks
     const fetchPromises = hubChunks.map(async (chunk) => {
       const cleanHubStr = chunk.join(',');
       const allSearchTargetsStr = [...new Set([...destArray, ...chunk])].join(',');
 
-      // Dynamic Date Logic per batch
       let connectionDate = date; 
       const longHaulRegions = ['NRT', 'HND', 'ICN', 'TPE', 'HKG', 'LHR', 'FRA', 'CDG', 'AMS', 'SYD', 'AKL', 'SIN', 'PEK', 'PKX', 'PVG', 'BKK', 'DXB', 'KIX'];
-      const isLongHaul = longHaulRegions.some(code => cleanFinalStr.includes(code)) || 
-                         chunk.some(h => longHaulRegions.includes(h));
+      const isLongHaul = longHaulRegions.some(code => cleanFinalStr.includes(code)) || chunk.some(h => longHaulRegions.includes(h));
 
       if (isLongHaul) {
         const nextDay = new Date(date);
@@ -74,6 +72,21 @@ exports.handler = async (event) => {
       }
       return { tData, cData };
     });
+
+    // BATCH B: Dedicated Direct Flights (Guarantees direct flights aren't buried by API limits)
+    const directPromise = async () => {
+      try {
+        const directUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${cleanFinalStr}&outbound_date=${date}&type=2&api_key=${serpKey}`;
+        const res = await fetch(directUrl);
+        const tData = await res.json();
+        return { tData, cData: { best_flights: [], other_flights: [] } };
+      } catch (err) {
+        console.error(`Direct Fetch Error:`, err.message);
+        return { tData: { best_flights: [], other_flights: [] }, cData: { best_flights: [], other_flights: [] } };
+      }
+    };
+    
+    fetchPromises.push(directPromise());
 
     // Wait for all batches to finish and merge the data
     const results = await Promise.all(fetchPromises);
@@ -125,7 +138,6 @@ exports.handler = async (event) => {
       };
     };
 
-    // Deduplication Engine: Removes identical flights merged from different batches
     const dedupeFlights = (flights) => {
       const seen = new Set();
       return flights.filter(f => {
@@ -146,7 +158,6 @@ exports.handler = async (event) => {
           if (trunkFilter) {
             const filterCode = trunkFilter.trim().toUpperCase();
             const filterName = AIRLINE_NAMES[filterCode] || filterCode;
-            
             const airlineUpper = f.airline.toUpperCase();
             const flightNumUpper = f.flight_number.toUpperCase();
 
@@ -162,15 +173,29 @@ exports.handler = async (event) => {
       return (flights || []).map(minimizeFlight);
     };
 
-    // We deduplicate trunks and bump the slice size to 60/150 to pass more data
-    const liveFlights = {
-      trunk_flights: dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])])).slice(0, 60),
-      connection_flights: dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])])).slice(0, 150)
+    // Non-Rev Sorting Engine (Ignores price, sorts strictly by shortest flight duration)
+    const sortByDuration = (a, b) => {
+      const durA = typeof a.duration_mins === 'number' ? a.duration_mins : 9999;
+      const durB = typeof b.duration_mins === 'number' ? b.duration_mins : 9999;
+      return durA - durB;
     };
 
-    console.log(`DEBUG: After deduplication & filtering: ${liveFlights.trunk_flights.length} valid trunk options remain.`);
+    const liveFlights = {
+      trunk_flights: dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]))
+        .sort(sortByDuration)
+        .slice(0, 80),
+      connection_flights: dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])]))
+        .sort(sortByDuration)
+        .slice(0, 150)
+    };
 
-    // CIRCUIT BREAKER
+    // HUB PRE-VALIDATION: We scan the data to see which hubs ACTUALLY have trunk flights, and only pass those to Claude.
+    const validTrunkDests = [...new Set(liveFlights.trunk_flights.map(f => f.dest))];
+    const validHubs = filteredHubs.filter(h => validTrunkDests.includes(h));
+
+    console.log(`DEBUG: After deduplication & filtering: ${liveFlights.trunk_flights.length} valid trunk options remain.`);
+    console.log(`DEBUG: Pre-Validated Hubs with actual flights: ${validHubs.join(', ') || "None"}`);
+
     if (liveFlights.trunk_flights.length === 0) {
       console.log("CIRCUIT BREAKER: 0 trunk flights found. Aborting Claude to prevent hallucinations.");
       await setDoc(doc(db, "research", userId), {
@@ -192,16 +217,18 @@ exports.handler = async (event) => {
     
     CRITICAL DATA INTEGRITY & EXTRACTION RULES:
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights or using pre-trained knowledge. Every single flight number, airline, departure time, and arrival time you output MUST be a direct copy-paste from the CLEAN LIVE DATA provided above.
-    2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA.
+    2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA. This is your top priority.
     3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections.
-    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to (${filteredHubs.join(',')}). IF A HUB HAS NO TRUNK FLIGHT IN THE LIVE DATA, SKIP IT.
+    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate ONLY these valid hubs: (${validHubs.join(',')}). 
+       - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code. (e.g. Do not assign an ICN flight to KIX).
     5. STRICT AIRLINE: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them for a highly efficient connection, you MUST add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
+    6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them, you MUST add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
     7. STRICT JSON FORMATTING: 
        - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks (e.g., no \`\`\`json).
        - Start your response exactly with the { character.
        - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
-       - DO NOT leave trailing commas at the end of any objects or arrays.`;
+       - DO NOT leave trailing commas at the end of any objects or arrays.
+    8. NON-REV OPTIMIZATION (CRITICAL): Standby travelers do not care about ticket prices. When selecting your 10 hub routes, your ONLY goal is to maximize the probability of getting a seat while minimizing travel time. Prioritize routes with the shortest total durations and larger widebody aircraft (e.g., 777, 787, A350, A380, A330) which hold more passengers.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -213,7 +240,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
         max_tokens: 8192,
-        messages: [{ role: "user", content: enhancedPrompt }] // <-- Reverted to single user message
+        messages: [{ role: "user", content: enhancedPrompt }]
       })
     });
 
@@ -223,7 +250,7 @@ exports.handler = async (event) => {
     if (!claudeData.content?.[0]) throw new Error("Claude Data Missing");
 
     await setDoc(doc(db, "research", userId), {
-      results: claudeData.content[0].text, // <-- Reverted string concatenation
+      results: claudeData.content[0].text,
       timestamp: new Date().toISOString(),
       status: "complete"
     });
