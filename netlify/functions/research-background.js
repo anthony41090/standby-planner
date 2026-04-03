@@ -31,9 +31,6 @@ exports.handler = async (event) => {
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
       connectionDate = nextDay.toISOString().split('T')[0];
-      console.log(`Long-haul detected. Routing connections for tomorrow: ${connectionDate}`);
-    } else {
-      console.log(`Short/Medium-haul detected. Routing connections for same-day: ${connectionDate}`);
     }
 
     const trunkDestinations = hubs ? `${finalDestination},${hubs}` : finalDestination;
@@ -42,29 +39,24 @@ exports.handler = async (event) => {
     let trunkData = { best_flights: [], other_flights: [] };
     let connData = { best_flights: [], other_flights: [] };
 
-    console.log("Fetching Trunk schedules...");
-    
     if (hubs) {
-      console.log(`Hubs detected (${hubs}). Fetching Connections...`);
       const connUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${hubs}&arrival_id=${finalDestination}&outbound_date=${connectionDate}&type=2&api_key=${serpKey}`;
-      
       const [trunkRes, connRes] = await Promise.all([fetch(trunkUrl), fetch(connUrl)]);
       trunkData = await trunkRes.json();
       connData = await connRes.json();
     } else {
-      console.log("No hubs required. Fetching direct/standard routes only.");
       const trunkRes = await fetch(trunkUrl);
       trunkData = await trunkRes.json();
     }
 
     // --- 2. SMART ASYMMETRIC FILTERING ---
-    const majorTrunkCarriers = ["UA", "UNITED", "AS", "ALASKA", "HA", "HAWAIIAN", "AA", "AMERICAN", "DL", "DELTA", "JL", "JAPAN AIRLINES", "NH", "ANA", "ALL NIPPON", "ZG", "ZIPAIR", "AF", "AIR FRANCE", "LH", "LUFTHANSA", "BA", "BRITISH AIRWAYS"];
+    const majorTrunkCarriers = ["UA", "UNITED", "AS", "ALASKA", "HA", "HAWAIIAN", "AA", "AMERICAN", "DL", "DELTA", "JL", "JAPAN", "NH", "ANA", "ALL NIPPON", "ZG", "ZIPAIR", "BA", "BRITISH", "LH", "LUFTHANSA", "AF", "AIR FRANCE"];
 
     const liveFlights = {
       trunk_flights: [...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]
         .filter(f => {
-          const name = f.airline?.toUpperCase() || "";
-          return majorTrunkCarriers.some(carrier => name.includes(carrier));
+          const airlineName = (f.airline || "").toUpperCase();
+          return majorTrunkCarriers.some(c => airlineName.includes(c));
         })
         .slice(0, 15), 
       connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])]
@@ -72,15 +64,11 @@ exports.handler = async (event) => {
     };
 
     console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} filtered trunk flights.`);
-    const compressedFlightData = JSON.stringify(liveFlights).substring(0, 90000);
 
-    console.log("Passing 2-stage live data to Claude (Sonnet 3.5)...");
+    const compressedFlightData = JSON.stringify(liveFlights).substring(0, 95000);
     
-    const enhancedPrompt = prompt + `\n\n
-    LIVE DATA: ${origin} ➔ ${finalDestination}
-    ${compressedFlightData}
-    
-    INSTRUCTIONS: Extract flights from ${origin} to ${finalDestination}. Include hub routes via [${hubs}]. Use placeholders for missing aircraft/duration. Return ONLY JSON.`;
+    // --- 3. UPDATED MODEL ID (CLAUDE SONNET 4.6) ---
+    const enhancedPrompt = prompt + `\n\nLIVE DATA: ${compressedFlightData}\n\nINSTRUCTIONS: Extract flights from ${origin} to ${finalDestination}. Include hub routes via [${hubs}]. Use placeholders for missing aircraft/duration. Return ONLY JSON.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -90,7 +78,7 @@ exports.handler = async (event) => {
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022", 
+        model: "claude-sonnet-4-6", 
         max_tokens: 8192,
         messages: [{ role: "user", content: enhancedPrompt }]
       })
@@ -99,13 +87,11 @@ exports.handler = async (event) => {
     const claudeData = await claudeResponse.json();
 
     if (!claudeData.content || !claudeData.content[0]) {
-      throw new Error(`Claude Error: ${JSON.stringify(claudeData)}`);
+      throw new Error(`Claude API Error: ${JSON.stringify(claudeData)}`);
     }
 
-    const finalJsonText = claudeData.content[0].text;
-
     await setDoc(doc(db, "research", userId), {
-      results: finalJsonText,
+      results: claudeData.content[0].text,
       timestamp: new Date().toISOString(),
       status: "complete"
     });
