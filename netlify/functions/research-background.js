@@ -181,7 +181,7 @@ exports.handler = async (event) => {
       return; 
     }
 
-    // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT
+   // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
@@ -194,7 +194,7 @@ exports.handler = async (event) => {
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights or using pre-trained knowledge. Every single flight number, airline, departure time, and arrival time you output MUST be a direct copy-paste from the CLEAN LIVE DATA provided above.
     2. MANDATORY DIRECT FLIGHTS: Extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found EXACTLY in the LIVE DATA.
     3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections.
-    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to (${cleanHubStr}). IF A HUB HAS NO TRUNK FLIGHT IN THE LIVE DATA, SKIP IT.
+    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to (${filteredHubs.join(',')}). IF A HUB HAS NO TRUNK FLIGHT IN THE LIVE DATA, SKIP IT.
     5. STRICT AIRLINE: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
     6. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. If you include them for a highly efficient connection, you MUST add a note: "⚠️ [Airline Name] is not standby eligible (confirmed ticket required)."
     7. JSON ONLY: Return ONLY the structured JSON object.`;
