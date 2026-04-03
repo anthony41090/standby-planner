@@ -65,12 +65,10 @@ export const handler = async (event) => {
     ${compressedFlightData}
     
     CRITICAL INSTRUCTIONS:
-    1. DO NOT guess or hallucinate schedules. You MUST ONLY use the flights provided in the LIVE FLIGHT DATA above.
-    2. THE STANDBY HUB STRATEGY: You have two datasets. "trunk_flights" are long-haul flights from the origin. "connection_flights" are short-haul flights from Asian hubs to the final destination the NEXT DAY.
-    3. STITCHING ROUTES: For every hub route, you MUST ensure there is a valid connection flight that departs the Hub AT LEAST 1.5 hours AFTER the trunk flight arrives (Minimum Connect Time). If no valid connection exists in the data, omit the route entirely.
-    4. NO DUPLICATES: If a flight is listed in "direct_flights", it MUST NOT appear in "hub_routes".
-    5. STRICT CODES: You MUST use exact 2-letter IATA codes for all "airline" fields (e.g., use "KE", do NOT write "Korean Air").
-    6. Return strictly valid JSON matching the exact schema requested. No markdown, no conversational text.
+    1. DATA INTEGRITY: You MUST cross-reference flight numbers exactly. UA 879 and UA 881 are NOT SFO-Tokyo flights. Only use flight numbers explicitly listed for the SFO departure in the LIVE DATA.
+    2. ANCHORING: For every flight, you MUST include the "aircraft" and "duration_hrs" fields. If you cannot find these for a specific flight number, do not include that flight.
+    3. STITCHING: Ensure Hub connections (ICN, TPE, etc.) depart at least 1.5 hours AFTER the trunk flight arrives.
+    4. STRICT CODES: Use 2-letter IATA codes (UA, NH, JL) for all "airline" fields.
     `;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {

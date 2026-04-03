@@ -1639,7 +1639,8 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {enriched.map((r) => {
           // --- THE FALLBACK LOGIC ---
-          const carrierCode = r.trunkCarrier || r.airline;
+          const rawCode = r.trunkCarrier || r.airline || "";
+const carrierCode = rawCode.match(/[A-Z0-9]{2}/)?.[0] || rawCode;
           const dl = getDeadlineInfo(carrierCode);
           const rules = AIRLINE_RULES[carrierCode] || {}; 
           const a = AGREEMENTS[carrierCode] || {};
