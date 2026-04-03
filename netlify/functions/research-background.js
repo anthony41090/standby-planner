@@ -17,15 +17,14 @@ exports.handler = async (event) => {
   const serpKey = process.env.SERPAPI_KEY;
 
   try {
-    // 1. GLOBAL MULTI-DESTINATION LOGIC (ROOT CAUSE FIX)
-    // Convert comma-strings into clean Arrays
+    // 1. GLOBAL MULTI-DESTINATION LOGIC
+    // Treats all airports in a city (HND,NRT or JFK,EWR,LGA) as primary goals
     const destArray = finalDestination.split(',').map(d => d.trim().toUpperCase());
     const hubArray = hubs ? hubs.split(',').map(h => h.trim().toUpperCase()) : [];
 
-    // Filter Hubs: Remove any airport that is already a final destination (e.g., move HND out of hubs)
+    // Ensure a destination airport isn't mistakenly used as a "middle-man" hub
     const filteredHubs = hubArray.filter(h => !destArray.includes(h));
     
-    // Reconstruct strings for the search engine
     const cleanFinalStr = destArray.join(',');
     const cleanHubStr = filteredHubs.join(',');
     const allSearchTargets = [...new Set([...destArray, ...filteredHubs])].join(',');
@@ -44,7 +43,7 @@ exports.handler = async (event) => {
       connectionDate = nextDay.toISOString().split('T')[0];
     }
 
-    // 3. FETCH DATA
+    // 3. FETCH DATA FROM SERPAPI
     const trunkUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${allSearchTargets}&outbound_date=${date}&type=2&api_key=${serpKey}`;
     
     let trunkData = { best_flights: [], other_flights: [] };
@@ -60,46 +59,42 @@ exports.handler = async (event) => {
       trunkData = await trunkRes.json();
     }
 
-    // 4. STRICT AIRLINE & CABIN FILTERING
+    // 4. STRICT AIRLINE FILTERING
     const filterTrunk = (flights) => {
       return (flights || []).filter(f => {
         const airlineInfo = f.airline || (f.flights && f.flights[0] && f.flights[0].airline) || "";
         const airline = airlineInfo.toUpperCase();
         
-        // If user explicitly selected a trunk airline (e.g., UA), only show that carrier
+        // If a trunk carrier (e.g., United) was selected, enforce it strictly for leg 1
         if (trunkFilter) {
           return airline.includes(trunkFilter.toUpperCase());
         }
         
-        // Broad search fallback: exclude LCCs that don't have standby agreements
-        const excluded = ["SPIRIT", "FRONTIER", "SOUTHWEST", "RYANAIR", "EASYJET"];
-        return airline && !excluded.some(e => airline.includes(e));
+        // General major carriers only (avoiding non-agreement LCCs like ZipAir for trunk)
+        const majorCarriers = ["UA", "AS", "HA", "JL", "NH", "CX", "BR", "KE", "BA", "LH", "AF", "AA", "DL"]; 
+        return majorCarriers.some(mc => airline.includes(mc));
       });
     };
 
     const liveFlights = {
-      // Directs to ANY destination airport + all Hubs
       trunk_flights: filterTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 25),
-      // Connections from Hubs to ANY of the destination airports
       connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])].slice(0, 50)
     };
 
     console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} filtered trunk options.`);
 
-    // 5. THE OPTIMIZED SONNET PROMPT
+    // 5. THE CLAUDE SONNET 4.6 PROMPT
     const enhancedPrompt = prompt + `\n\n
-    =========================================
-    LIVE DATA: ${origin} ➔ ${cleanFinalStr}
-    =========================================
-    ${JSON.stringify(liveFlights).substring(0, 95000)}
-    
     CRITICAL EXTRACTION RULES:
-    1. WIN STATE: A flight from ${origin} to ANY of these airports is a DIRECT flight: ${cleanFinalStr}.
+    1. WIN STATE: Any flight from ${origin} to ${cleanFinalStr} is a DIRECT flight.
     2. HUB LIMIT: Select ONLY the TOP 6 hub routes total.
     3. NO INTERNAL TRIPS: Do not suggest connections between destination airports (e.g., EWR to JFK).
-    4. AIRLINE PRIORITY: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partner carriers."}
+    4. AIRLINE PRIORITY: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."}
     5. CABIN: Target ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. JSON ONLY: Return ONLY the structured JSON object.`;
+    6. JSON ONLY: Return ONLY the structured JSON object.
+    
+    DATA:
+    ${JSON.stringify(liveFlights).substring(0, 90000)}`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -116,7 +111,9 @@ exports.handler = async (event) => {
     });
 
     const claudeData = await claudeResponse.json();
-    if (!claudeData.content || !claudeData.content[0]) throw new Error("Claude Data Missing");
+    
+    if (claudeData.error) throw new Error(`Claude API: ${claudeData.error.message}`);
+    if (!claudeData.content?.[0]) throw new Error("Claude Data Missing");
 
     await setDoc(doc(db, "research", userId), {
       results: claudeData.content[0].text,
@@ -124,7 +121,7 @@ exports.handler = async (event) => {
       status: "complete"
     });
 
-    console.log("SUCCESS: Saved to Firebase.");
+    console.log("SUCCESS: Results pushed to Firebase.");
 
   } catch (error) {
     console.error("Error:", error.message);
