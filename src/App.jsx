@@ -1254,24 +1254,30 @@ function Research({trip,onDone,onSkip}){
   async function run(){
     setStatus("searching");
 
-    // --- 1. RESOLVE GLOBAL CITY-TO-AIRPORT MAPPINGS ---
-    // Handle Origins (e.g., NYC -> JFK,EWR,LGA)
+    // 1. First, define the raw array from the trip object
+    const originAirports = (trip.originCodes && trip.originCodes.length > 0) 
+      ? trip.originCodes 
+      : [trip.origin];
+
+    // 2. Now resolve the Global City-to-Airport Mappings
     const originInput = trip.origin.toUpperCase();
+    // originAirports[0] is now safely defined for this fallback
     const originCode = originCityToAirports[originInput] || originAirports[0];
     
-    // Handle Destinations (e.g., Tokyo -> HND,NRT)
     const destInput = trip.destination.split(",")[0].trim();
     const searchCode = cityToAirports[destInput] || (trip.destCodes && trip.destCodes.length > 0 ? trip.destCodes[0] : destInput);
 
-    // Resolve origin airports — may be multiple for a city (e.g., SFO/OAK/SJC for San Francisco)
+    // 3. Define the string for logging
     const originStr = originCode.split(",").join("/");
     addLog(`Researching ${originStr} → ${trip.destination}…`);
 
-    // Detect region — check both destination AND origin (for reverse trips like Tokyo→SFO)
+   // --- Continue with Region Detection ---
     const searchTexts = [
       (trip.destination||"").toLowerCase() + " " + ((trip.destCodes||[]).join(" ")).toLowerCase(),
       (trip.origin||"").toLowerCase() + " " + ((trip.originCodes||[]).join(" ")).toLowerCase(),
     ];
+
+    // DO NOT MISS THIS LOOP:
     let matchedRegion = null, matchedData = null;
     for(const searchText of searchTexts){
       for(const[region,data] of Object.entries(REGIONS)){
