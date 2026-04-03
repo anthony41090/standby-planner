@@ -1295,13 +1295,21 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     // ------------------------------
 
     try {
-      // 0. RESET FIREBASE SO WE DON'T READ OLD RESULTS
-      const { doc, setDoc, onSnapshot, getFirestore } = await import("firebase/firestore");
+      // 1. CLEAR THE DATABASE FIRST (Deep Reset)
+      const { doc, setDoc, getFirestore } = await import("firebase/firestore");
       const db = getFirestore();
-      // Wipe the old search and set status to processing
-      await setDoc(doc(db, "research", "anthony_alonso"), { status: "processing", results: "" });
       
-      // 1. Trigger the Background Function
+      // We set results to an empty array string and status to processing.
+      // This forces the UI to ignore old data and show the spinner immediately.
+      await setDoc(doc(db, "research", "anthony_alonso"), { 
+        status: "processing", 
+        results: "[]", 
+        timestamp: new Date().toISOString() 
+      });
+
+      addLog("Database reset. Triggering fresh research...");
+
+      // 2. NOW trigger the Background Function
       const response = await fetch("/.netlify/functions/research-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1309,8 +1317,8 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
           prompt: prompt,
           userId: "anthony_alonso",
           origin: trip.origin.replace(/\//g, ","), 
-          finalDestination: trip.destination.replace(/\//g, ","), // <-- CHANGED from 'destination'
-          hubs: dynamicHubs, // <-- ADDED dynamic variable
+          finalDestination: trip.destination.replace(/\//g, ","),
+          hubs: dynamicHubs,
           date: trip.travelDate
         })
       });
@@ -1328,13 +1336,17 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         }, 45000); 
         
         const unsub = onSnapshot(doc(db, "research", "anthony_alonso"), (docSnap) => {
-          if (docSnap.exists() && docSnap.data().status === "complete") {
-            const backgroundData = docSnap.data().results;
+          const data = docSnap.data();
+          
+          // --- UPDATED SAFETY CHECK ---
+          // We only proceed if the status is "complete" AND the results are not the reset value "[]"
+          if (docSnap.exists() && data.status === "complete" && data.results !== "[]") {
+            const backgroundData = data.results;
             
             // --- CLEAR THE INTERVAL HERE ---
             clearInterval(loadingInterval);
             
-            addLog("Background research received! Parsing...");
+            addLog("New results received! Parsing...");
             
             try {
               const rawData = backgroundData;
