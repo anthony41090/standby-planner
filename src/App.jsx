@@ -1404,6 +1404,7 @@ Return ONLY valid JSON in this format:
     }
   ]
 }`;
+
     addLog("Initiating Claude Research (Priority 1)...");
 
     try {
