@@ -1339,8 +1339,8 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         if (hub === searchCode) return false;
         const hCoords = HUB_COORDINATES[hub];
         if (!hCoords) return false;
-        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 2200; 
-      }).slice(0, 12);
+        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 1600; 
+      }).slice(0, 5);
       addLog(`Proximity filter: Found ${hubArray.length} hubs near ${searchCode}.`);
     } else {
       hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
@@ -1404,18 +1404,19 @@ Return ONLY valid JSON in this format:
       addLog("Database reset. Triggering fresh research...");
 
       // 2. NOW trigger the Background Function
-      const response = await fetch("/.netlify/functions/research-background", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          prompt: prompt,
-          userId: "anthony_alonso",
-          origin: trip.origin.replace(/\//g, ","), 
-          finalDestination: trip.destination.replace(/\//g, ","),
-          hubs: "",
-          date: trip.travelDate
-        })
-      });
+  const response = await fetch("/.netlify/functions/research-background", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ 
+      prompt: prompt,
+      userId: "anthony_alonso",
+      // Send only the first airport (SFO) to the search engine for better hits
+      origin: originAirports[0], 
+      finalDestination: searchCode, // Uses "NRT" or "HND" instead of "Tokyo"
+      hubs: dynamicHubs, // Now limited to your 5 closest matches
+      date: trip.travelDate
+    })
+  });
 
       if (response.status === 202) {
         addLog("Research task started in background (bypass 60s timeout)...");
