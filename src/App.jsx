@@ -1434,7 +1434,6 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
                   });
                 });
 
-                setResults(routes);
                 setStatus("done");
                 if (onDone) onDone(routes);
                 addLog(`Success: Found ${routes.length} validated routes.`);
