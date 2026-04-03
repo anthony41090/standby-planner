@@ -36,19 +36,36 @@ export const handler = async (event) => {
         "Content-Type": "application/json",
         "x-api-key": key,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "token-efficient-tools-2025-02-19" // Removed the fast-mode beta
+        "anthropic-beta": "token-efficient-tools-2025-02-19"
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
         max_tokens: 4000,
-        // REMOVED: speed: "fast"
         tools: [{ type: "web_search_20260209", name: "web_search" }],
         messages: [{ 
           role: "user", 
-          content: prompt + " \n\nIMPORTANT: Focus only on the top 5 most reliable hub routes. Be concise to ensure a quick response." 
+          content: prompt + `
+
+IMPORTANT: Focus only on the top 5 most reliable hub routes. 
+CRITICAL: You MUST respond with strictly valid JSON. Do not include any conversational text, markdown formatting, emojis, or explanations. 
+Your output must exactly match this JSON schema:
+{
+  "direct_flights": [
+    { "flight": "UA 837", "route": "SFO-NRT", "departs": "11:40", "arrives": "15:10+1", "duration": "11.5 hrs" }
+  ],
+  "hub_routes": [
+    {
+      "hub": "ICN",
+      "trunk_flight": "UA 35 SFO-ICN",
+      "connections": [
+        { "flight": "KE 705", "route": "ICN-NRT", "departs": "20:45", "arrives": "22:10", "duration": "3.0 hrs" }
+      ]
+    }
+  ]
+}` 
         }]
-      })
-    });
+      }) // <-- RESTORED: Closes JSON.stringify
+    }); // <-- RESTORED: Closes fetch
 
     const data = await response.json();
 
