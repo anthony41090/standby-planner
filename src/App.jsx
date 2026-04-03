@@ -1334,6 +1334,11 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
     let parsed = null;
 
     try {
+      // 0. RESET FIREBASE SO WE DON'T READ OLD RESULTS
+      const { doc, setDoc, onSnapshot, getFirestore } = await import("firebase/firestore");
+      const db = getFirestore();
+      // Wipe the old search and set status to processing
+      await setDoc(doc(db, "research", "anthony_alonso"), { status: "processing", results: "" });
       // 1. Trigger the Background Function
       const response = await fetch("/.netlify/functions/research-background", {
         method: "POST",
