@@ -1412,7 +1412,7 @@ Return ONLY valid JSON in this format:
           userId: "anthony_alonso",
           origin: trip.origin.replace(/\//g, ","), 
           finalDestination: trip.destination.replace(/\//g, ","),
-          hubs: dynamicHubs,
+          hubs: "",
           date: trip.travelDate
         })
       });

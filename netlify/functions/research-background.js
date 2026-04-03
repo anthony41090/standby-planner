@@ -54,6 +54,16 @@ export const handler = async (event) => {
       connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])]
     };
 
+    // ─── ADD THESE LOGS HERE ────────────────────────────────────────────────
+    console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} trunk flights.`);
+    console.log(`DEBUG: Found ${liveFlights.connection_flights.length} connection flights.`);
+    
+    if (liveFlights.trunk_flights.length === 0) {
+      console.warn("⚠️ WARNING: Trunk flight search returned ZERO results from SerpApi.");
+      console.log("Full Trunk URL for debugging:", trunkUrl);
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const compressedFlightData = JSON.stringify(liveFlights).substring(0, 90000);
 
     console.log("Passing 2-stage live data to Claude...");
