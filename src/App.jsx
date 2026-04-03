@@ -1367,9 +1367,13 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
             addLog("Background research received! Parsing...");
             
             try {
-              const cleaned = backgroundData.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-              const m = cleaned.match(/\{[\s\S]*\}/);
-              parsed = m ? JSON.parse(m[0]) : null;
+              // This version is better at finding the JSON even if Claude added chat text
+              const rawData = backgroundData;
+              const jsonStart = rawData.indexOf('{');
+              const jsonEnd = rawData.lastIndexOf('}') + 1;
+              const jsonString = rawData.substring(jsonStart, jsonEnd);
+              
+              parsed = JSON.parse(jsonString);
 
               if (parsed) {
                 unsub(); // Stop listening
