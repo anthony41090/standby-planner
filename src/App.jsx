@@ -1267,33 +1267,7 @@ function Research({trip,onDone,onSkip}){
     const originStr = originCode.split(",").join("/");
     addLog(`Researching ${originStr} → ${trip.destination}…`);
 
-    // --- 3. DYNAMIC PROXIMITY HUBS ---
-    const mathCode = searchCode.includes(",") ? searchCode.split(",")[0] : searchCode;
-    const destCoords = HUB_COORDINATES[mathCode];
-    let hubArray = [];
-
-    if (destCoords) {
-      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
-        if (searchCode.includes(hub)) return false;
-        const hCoords = HUB_COORDINATES[hub];
-        if (!hCoords) return false;
-        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 1900; 
-      })
-      .sort((a, b) => {
-          const priority = ["KIX", "ICN", "TPE"];
-          if (priority.includes(a) && !priority.includes(b)) return -1;
-          if (!priority.includes(a) && priority.includes(b)) return 1;
-          return 0;
-      })
-      .slice(0, 6);
-      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${mathCode}.`);
-    } else {
-      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
-      addLog(`Coordinates unknown for ${mathCode}. Using global fallbacks.`);
-    }
-    const dynamicHubs = hubArray.join(",");
-
-   // --- 4. REGION DETECTION ---
+   // --- 3. REGION DETECTION (Moved up to inform Hub Priority) ---
     const searchTexts = [
       (trip.destination||"").toLowerCase() + " " + ((trip.destCodes||[]).join(" ")).toLowerCase(),
       (trip.origin||"").toLowerCase() + " " + ((trip.originCodes||[]).join(" ")).toLowerCase(),
@@ -1309,6 +1283,42 @@ function Research({trip,onDone,onSkip}){
       if(matchedRegion) break;
     }
 
+    // --- 4. DYNAMIC PROXIMITY HUBS (Now Region-Aware & Scalable) ---
+    const mathCode = searchCode.includes(",") ? searchCode.split(",")[0] : searchCode;
+    const destCoords = HUB_COORDINATES[mathCode];
+    let hubArray = [];
+
+    if (destCoords) {
+      // DYNAMIC PRIORITY: Extract the optimal routing hubs for the specific region we just detected
+      const regionalPriorityHubs = matchedData && matchedData.routingHubs 
+        ? matchedData.routingHubs.map(h => h.code) 
+        : [];
+
+      hubArray = MAJOR_GLOBAL_HUBS.filter(hub => {
+        if (searchCode.includes(hub)) return false;
+        const hCoords = HUB_COORDINATES[hub];
+        if (!hCoords) return false;
+        return getDistance(destCoords.lat, destCoords.lon, hCoords.lat, hCoords.lon) < 1900; 
+      })
+      .sort((a, b) => {
+          // 1. Sort by Regional Priority (e.g., FRA/AMS for Europe, KIX/ICN for Asia)
+          if (regionalPriorityHubs.includes(a) && !regionalPriorityHubs.includes(b)) return -1;
+          if (!regionalPriorityHubs.includes(a) && regionalPriorityHubs.includes(b)) return 1;
+          
+          // 2. Tie-breaker: Sort by actual distance to the destination (closest hubs first)
+          const distA = getDistance(destCoords.lat, destCoords.lon, HUB_COORDINATES[a].lat, HUB_COORDINATES[a].lon);
+          const distB = getDistance(destCoords.lat, destCoords.lon, HUB_COORDINATES[b].lat, HUB_COORDINATES[b].lon);
+          return distA - distB;
+      })
+      .slice(0, 10);
+      
+      addLog(`Proximity filter: Found ${hubArray.length} hubs near ${mathCode}.`);
+    } else {
+      hubArray = ["ICN", "TPE", "HKG", "LHR", "FRA", "ORD"];
+      addLog(`Coordinates unknown for ${mathCode}. Using global fallbacks.`);
+    }
+    const dynamicHubs = hubArray.join(",");
+    
     const cabinJ = trip.cabin === "J";
     let trunkCarriers, connCarriers;
     if(matchedData){
@@ -1383,7 +1393,7 @@ ${routingHubInstructions}
 RULES:
 1. ORIGIN: Find flights departing from ${originCode.split(",").join(" or ")}.
 2. DESTINATION: Find ALL non-stop flights from ${originCode.split(",").join("/")} to ${searchCode}. This is your top priority.
-3. HUB ROUTING: Find connections via these hubs: ${dynamicHubs}. Select ONLY the best 6 hub routes total.
+3. HUB ROUTING: Find connections via these hubs: ${dynamicHubs}. Select ONLY the best 10 hub routes total.
 4. AIRLINES: Focus on UA, AS, HA, and primary partners, but all major carriers are eligible.
 5. ACCURACY: Use real flight numbers. If aircraft or duration is missing, use placeholders (Boeing/11).
 

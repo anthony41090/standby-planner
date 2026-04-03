@@ -58,10 +58,10 @@ exports.handler = async (event) => {
       trunkData = await trunkRes.json();
     }
 
-    // 4. STRICT AIRLINE & ORIGIN FILTERING (The Hallucination Killer)
+    // 4. ORIGIN & TRUNK FILTERING ONLY
+    // We no longer block LCCs, we just ensure the trunk flight is from the right origin and on the requested airline.
     const filterTrunk = (flights) => {
       const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
-
       return (flights || []).filter(f => {
         const flightObj = f.flights?.[0] || f;
         const airlineInfo = flightObj.airline || f.airline || "";
@@ -74,35 +74,34 @@ exports.handler = async (event) => {
         // Strict Trunk Airline Check
         if (trunkFilter && !airline.includes(trunkFilter.toUpperCase())) return false;
         
-        // Exclude LCCs without standby agreements for the long-haul
-        const excluded = ["SPIRIT", "FRONTIER", "SOUTHWEST", "RYANAIR", "EASYJET", "ZIPAIR"];
-        return airline && !excluded.some(e => airline.includes(e));
+        return true; 
       });
     };
 
     const liveFlights = {
-      trunk_flights: filterTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 25),
-      connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])].slice(0, 50)
+      trunk_flights: filterTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])]).slice(0, 40),
+      connection_flights: [...(connData.best_flights || []), ...(connData.other_flights || [])].slice(0, 100) // All connections pass through
     };
 
     console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} strict trunk options.`);
 
     // 5. THE OPTIMIZED SONNET 4.6 PROMPT
+    const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
+    
     const enhancedPrompt = prompt + `\n\n
     =========================================
     LIVE DATA: ${origin} ➔ ${cleanFinalStr}
     =========================================
-    ${JSON.stringify(liveFlights).substring(0, 90000)}
+    ${JSON.stringify(liveFlights).substring(0, 95000)}
     
     CRITICAL DATA INTEGRITY & EXTRACTION RULES:
-    1. STRICT ORIGIN: Every trunk flight MUST depart from: ${origin}. IGNORE flights departing from anywhere else.
-    2. DIRECT vs HUB:
-       - DIRECT: Flights landing exactly in ${cleanFinalStr}.
-       - HUB: Flights landing in ${cleanHubStr}. You MUST provide a valid connecting flight from that hub to ${cleanFinalStr}. 
-    3. NO QUOTA PANIC (ANTI-HALLUCINATION): You are asked for UP TO 6 hub routes. If the data only has 1 or 2 valid trunk flights departing from ${origin}, ONLY output those 1 or 2 routes. DO NOT invent flights to reach the number 6.
-    4. NO HALLUCINATIONS: Do not guess routes. If the data says UA 837 goes to NRT, do not write HND. 
+    1. MANDATORY DIRECT FLIGHTS: You MUST extract and list EVERY direct flight from ${origin} to ${cleanFinalStr} found in the data. This is your absolute highest priority.
+    2. STRICT ORIGIN: Every trunk flight MUST depart from: ${origin}. IGNORE flights departing from anywhere else.
+    3. STRICT CONNECTIONS (NO "VARIES"): For hub routes, list each connecting flight individually. NEVER summarize connections or use the word "varies".
+    4. HUB LIMIT & COVERAGE: Select UP TO 10 hub routes total. Evaluate flights to all provided hubs (${cleanHubStr}).
     5. STRICT AIRLINE & CABIN: ${trunkFilter ? `Leg 1 MUST be on ${trunkFilter}.` : "Use major partners."} Prioritize ${cabin === 'J' ? 'Business/First Class' : 'Economy Class'}.
-    6. JSON ONLY: Return ONLY the structured JSON object.`;
+    6. LCC & NON-STANDBY AIRLINES: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. You may include them for connecting flights, but you MUST prioritize partner airlines first. If you do include one of these non-standby airlines, you MUST add a clear note in the 'notes' or 'hub_notes' field stating: "⚠️ [Airline Name] is not standby eligible (confirmed ticket required)."
+    7. JSON ONLY: Return ONLY the structured JSON object.`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
