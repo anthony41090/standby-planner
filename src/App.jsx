@@ -1352,20 +1352,43 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
 Your task is to map flight schedules into a JSON response.
 
 STRICT DATA INTEGRITY RULES:
-1. ORIGIN VALIDATION: Only include flights where the origin is EXACTLY "${originPromptStr}". 
-   - If the search data shows a flight from ORD or LAX, DISCARD it.
+1. ORIGIN VALIDATION: Only include flights where the origin is one of these: ${originAirports.join(", ")}. 
+   - Accept any flight starting at SFO, OAK, or SJC. 
+   - If the search data shows a flight from ORD, LAX, or any city NOT in the list above, DISCARD it.
 2. DESTINATION VALIDATION: Only include flights that end at "${trip.destination}" or one of these hubs: ${dynamicHubs}.
 3. NO HALLUCINATIONS: If you cannot find a specific flight number for a specific route in the data, do NOT include it. Accuracy is more important than quantity.
-4. FLIGHT NUMBER CHECK: Ensure the flight number (e.g., UA 837) actually serves the SFO-HND route in the provided data.
+4. FLIGHT NUMBER CHECK: Ensure the flight number actually serves the requested route in the provided data.
 
 STRICT LIMITS:
 - Max 10 total routing options.
 - Keep 'note' strings under 60 characters.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON in this exact format:
 {
-  "direct_flights": [{"airline":"UA","flight_number":"UA 837","departure_time":"11:40","arrival_time":"15:00+1","aircraft":"B777-300ER","origin":"${originPromptStr}","destination":"NRT","duration_hrs":11,"frequency":"daily","notes":"Direct flagship service."}],
-  "hub_routes": [{"hub_code":"HNL","hub_name":"Honolulu","trunk_flight":{"airline":"HA","flight_number":"HA 11","departure_time":"08:00","aircraft":"A330-200","duration_hrs":5.5},"connections":[{"airline":"HA","flight_number":"HA 863","departure_time":"16:30","arrival_time":"19:50+1","aircraft":"A330-200","destination":"NRT","layover_hrs":3}],"hub_notes":"Quick connection via HNL."}]
+  "direct_flights": [
+    {
+      "airline": "AA", 
+      "flight_number": "AA 123", 
+      "departure_time": "10:00", 
+      "arrival_time": "14:00", 
+      "aircraft": "787", 
+      "origin": "SFO", 
+      "destination": "HND", 
+      "duration_hrs": 11, 
+      "notes": "Example note"
+    }
+  ],
+  "hub_routes": [
+    {
+      "hub_code": "ICN",
+      "hub_name": "Seoul",
+      "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_time": "10:30", "aircraft": "777" },
+      "connections": [
+        { "airline": "OZ", "flight_number": "OZ 102", "destination": "NRT", "departure_time": "18:00", "layover_hrs": 3 }
+      ],
+      "hub_notes": "Reliable connection via Seoul."
+    }
+  ]
 }`;
 
   addLog("Initiating Claude Research (Priority 1)...");
@@ -1432,6 +1455,7 @@ Return ONLY valid JSON:
       if (!jsonMatch) throw new Error("No JSON found in response");
       
       const parsed = JSON.parse(jsonMatch[0]);
+      console.log("RAW AI DATA:", parsed);
 
       if (parsed) {
         unsub(); // Stop listening to Firebase
