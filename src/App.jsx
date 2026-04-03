@@ -1339,11 +1339,12 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          prompt: prompt, // <-- FIXED: Use your actual variable named 'prompt'
+          prompt: prompt,
           userId: "anthony_alonso",
-          origin: trip.origin, // <-- Grab origin from your trip object
-          destination: trip.destination, // <-- Grab destination from your trip object
-          date: trip.travelDate // <-- Grab travel date from your trip object
+          // This perfectly converts "SFO/OAK" -> "SFO,OAK" and "NRT/HND" -> "NRT,HND"
+          origin: trip.origin.replace(/\//g, ","), 
+          destination: trip.destination.replace(/\//g, ","), 
+          date: trip.travelDate
         })
       });
 
