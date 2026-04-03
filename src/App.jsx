@@ -1351,10 +1351,19 @@ You MUST include a hub_route entry for EACH hub where you find a viable ${trunkL
         // 2. Start Listening to Firebase for the result
         const { doc, onSnapshot, getFirestore } = await import("firebase/firestore");
         const db = getFirestore();
+
+        // --- ADD THE KEEP-ALIVE LOG HERE ---
+        const loadingInterval = setInterval(() => {
+          addLog("Claude is still researching... (Searching web and validating agreements)");
+        }, 45000); 
         
         const unsub = onSnapshot(doc(db, "research", "anthony_alonso"), (docSnap) => {
           if (docSnap.exists() && docSnap.data().status === "complete") {
             const backgroundData = docSnap.data().results;
+            
+            // --- CLEAR THE INTERVAL HERE ---
+            clearInterval(loadingInterval);
+            
             addLog("Background research received! Parsing...");
             
             try {
