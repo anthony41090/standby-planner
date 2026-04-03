@@ -1,5 +1,5 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc } from 'firebase/firestore';
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, setDoc } = require('firebase/firestore');
 
 const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY, 
@@ -11,7 +11,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-export const handler = async (event) => {
+exports.handler = async (event) => {
   const { prompt, userId, origin, finalDestination, hubs, date } = JSON.parse(event.body);
 
   const claudeKey = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
@@ -58,7 +58,6 @@ export const handler = async (event) => {
     }
 
     // --- 2. SMART ASYMMETRIC FILTERING ---
-    // Includes both codes and partial names to handle varied SerpApi data formats
     const majorTrunkCarriers = ["UA", "UNITED", "AS", "ALASKA", "HA", "HAWAIIAN", "AA", "AMERICAN", "DL", "DELTA", "JL", "JAPAN AIRLINES", "NH", "ANA", "ALL NIPPON", "ZG", "ZIPAIR", "AF", "AIR FRANCE", "LH", "LUFTHANSA", "BA", "BRITISH AIRWAYS"];
 
     const liveFlights = {
@@ -73,20 +72,48 @@ export const handler = async (event) => {
     };
 
     console.log(`DEBUG: Found ${liveFlights.trunk_flights.length} filtered trunk flights.`);
-    console.log(`DEBUG: Found ${liveFlights.connection_flights.length} connection flights.`);
-
     const compressedFlightData = JSON.stringify(liveFlights).substring(0, 90000);
 
     console.log("Passing 2-stage live data to Claude (Sonnet 3.5)...");
     
     const enhancedPrompt = prompt + `\n\n
-    =========================================
-    LIVE FLIGHT DATA: ${origin} ➔ ${finalDestination}
-    =========================================
+    LIVE DATA: ${origin} ➔ ${finalDestination}
     ${compressedFlightData}
     
-    FINAL EXTRACTION INSTRUCTIONS:
-    1. SCOPE: Extract all valid flights departing from ${origin} and arriving at ${finalDestination}.
-    2. HUB ROUTING: Identify logical routes that pass through these hubs: [${hubs}]. 
-    3. CONNECTION FLEXIBILITY: For the connection leg, include ANY airline found in the data.
-    4. DATA ROBUSTNESS: Use placeholders (e.g., "Boeing", "2
+    INSTRUCTIONS: Extract flights from ${origin} to ${finalDestination}. Include hub routes via [${hubs}]. Use placeholders for missing aircraft/duration. Return ONLY JSON.`;
+
+    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": claudeKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-20241022", 
+        max_tokens: 8192,
+        messages: [{ role: "user", content: enhancedPrompt }]
+      })
+    });
+
+    const claudeData = await claudeResponse.json();
+
+    if (!claudeData.content || !claudeData.content[0]) {
+      throw new Error(`Claude Error: ${JSON.stringify(claudeData)}`);
+    }
+
+    const finalJsonText = claudeData.content[0].text;
+
+    await setDoc(doc(db, "research", userId), {
+      results: finalJsonText,
+      timestamp: new Date().toISOString(),
+      status: "complete"
+    });
+
+    console.log("SUCCESS: Double-Hop Results saved to Firebase.");
+
+  } catch (error) {
+    console.error("Background Process Error:", error.message);
+    await setDoc(doc(db, "research", userId), { status: "error", error: error.message });
+  }
+};
