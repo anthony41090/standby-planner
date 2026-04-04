@@ -1376,7 +1376,9 @@ function Research({trip,onDone,onSkip}){
               }
             } catch (parseErr) {
               console.error("JSON Parse Error:", parseErr);
-              addLog("Error parsing AI results. Check browser console.");
+              addLog("Error parsing AI results: Claude formatted the data incorrectly.");
+              setError("The AI generated a slight typo in the flight data. Please click Retry to run it again.");
+              setStatus("error");
             }
           }
         });

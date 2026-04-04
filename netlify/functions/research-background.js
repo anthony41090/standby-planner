@@ -210,13 +210,14 @@ exports.handler = async (event) => {
     =========================================
     ${JSON.stringify(liveFlights)}
     
-    CRITICAL DATA INTEGRITY & EXTRACTION RULES:
+   CRITICAL DATA INTEGRITY & EXTRACTION RULES:
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
     2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
     3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays to build your routes. 
     4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
     5. NON-REV OPTIMIZATION & WARNINGS: Prioritize routes with the shortest total durations. You MUST calculate and provide the total_duration_hrs for the entire journey. You MUST set 'overnight_layover' to true if the connection departs on a different calendar day than the trunk arrives. You MUST set 'airport_change' to true if the connection departs from a different airport than the trunk arrived at (e.g., arrived HND, departing NRT).
-    6. STRICT JSON FORMATTING & SCHEMA: 
+    6. JSON SYNTAX VALIDATION: You are generating a massive JSON object. You MUST double-check your syntax. Ensure EVERY object inside an array is separated by a comma. Do NOT miss a single comma.
+    7. STRICT JSON FORMATTING & SCHEMA: 
        - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks.
        - Start your response exactly with the { character.
        - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
@@ -242,7 +243,7 @@ exports.handler = async (event) => {
            }
          ]
        }`;
-
+      
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
