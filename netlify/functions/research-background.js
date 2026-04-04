@@ -201,7 +201,7 @@ exports.handler = async (event) => {
       return; 
     }
 
-   // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT
+   // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT (MINIFIED)
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
@@ -210,40 +210,35 @@ exports.handler = async (event) => {
     =========================================
     ${JSON.stringify(liveFlights)}
     
-   CRITICAL DATA INTEGRITY & EXTRACTION RULES:
+    CRITICAL DATA INTEGRITY & EXTRACTION RULES:
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
-    2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
-    3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays to build your routes. LIMIT yourself to a MAXIMUM of 8 connection options per hub to provide variety while saving space.
-    4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
-    5. NON-REV OPTIMIZATION & WARNINGS: Prioritize routes with the shortest total durations. You MUST calculate total_duration_hrs. You MUST set 'overnight_layover' and 'airport_change' to true if applicable. Ensure text in 'notes', 'hub_notes', and 'layover_note' is highly actionable and helpful for standby travelers, but keep it concise (Maximum 50 words per note).
-    6. JSON SYNTAX VALIDATION: You are generating a massive JSON object. You MUST double-check your syntax. Ensure EVERY object inside an array is separated by a comma. Do NOT miss a single comma.
-    7. STRICT JSON FORMATTING & SCHEMA: 
-       - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks.
-       - Start your response exactly with the { character.
-       - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
+    2. MANDATORY DIRECT FLIGHTS: List every flight found in the "direct_flights" array.
+    3. HUB MAPPING: Select UP TO 8 connection options per hub to provide variety.
+    4. NON-STANDBY ALERTS: Airlines like ${nonStandbyAirlines.join(', ')} require confirmed tickets. Add ⚠️ warning.
+    5. OPTIMIZATION & WARNINGS: Prioritize short durations. Calculate 'tdh' (total duration hrs). Set 'ov' (overnight) and 'ac' (airport change) booleans. Write highly actionable notes (Maximum 50 words).
+    6. MINIFIED SCHEMA: To save tokens, you MUST use the exact ultra-short keys provided below. 
+       - Do NOT use double quotes (") inside text values. Use single quotes (').
        - NEVER output "TBD".
-       - You MUST include 'departure_date' and 'arrival_date' for every leg.
-       - You MUST use this exact JSON schema structure:
        {
-         "direct_flights": [
-           { "airline": "UA", "flight_number": "UA 837", "departure_date": "2026-04-10", "departure_time": "11:40", "arrival_date": "2026-04-11", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct service" }
+         "df": [
+           { "al": "UA", "fn": "UA 837", "dd": "2026-04-10", "dt": "11:40", "ad": "2026-04-11", "at": "15:00", "air": "777", "or": "SFO", "de": "NRT", "dh": 11, "n": "Direct service." }
          ],
-         "hub_routes": [
+         "hr": [
            {
-             "hub_code": "ICN",
-             "hub_name": "Seoul",
-             "overnight_layover": true,
-             "airport_change": false,
-             "total_duration_hrs": 24.5,
-             "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_date": "2026-04-10", "departure_time": "10:30", "arrival_date": "2026-04-11", "arrival_time": "15:30", "aircraft": "777", "destination": "ICN" },
-             "connections": [
-               { "airline": "OZ", "flight_number": "OZ 102", "origin": "ICN", "destination": "NRT", "departure_date": "2026-04-12", "departure_time": "18:00", "arrival_date": "2026-04-12", "arrival_time": "20:30", "layover_hrs": 26.5, "layover_note": "Connect via Seoul." }
+             "hc": "ICN",
+             "hn": "Seoul",
+             "ov": true,
+             "ac": false,
+             "tdh": 24.5,
+             "tf": { "al": "UA", "fn": "UA 893", "dd": "2026-04-10", "dt": "10:30", "ad": "2026-04-11", "at": "15:30", "air": "777", "de": "ICN" },
+             "cx": [
+               { "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 26.5, "ln": "Connect via Seoul." }
              ],
-             "hub_notes": "Overnight required."
+             "h_n": "Overnight required."
            }
          ]
        }`;
-      
+
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -263,13 +258,41 @@ exports.handler = async (event) => {
     if (claudeData.error) throw new Error(`Claude API: ${claudeData.error.message}`);
     if (!claudeData.content?.[0]) throw new Error("Claude Data Missing");
 
+    // 5. EXPAND MINIFIED JSON BACK TO FULL VERBOSE FORMAT FOR FRONTEND
+    let rawJsonText = claudeData.content[0].text;
+    const jsonMatch = rawJsonText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON found in Claude response");
+    
+    const minData = JSON.parse(jsonMatch[0]);
+    
+    const expandedData = {
+      direct_flights: (minData.df || []).map(f => ({
+        airline: f.al, flight_number: f.fn, departure_date: f.dd, departure_time: f.dt,
+        arrival_date: f.ad, arrival_time: f.at, aircraft: f.air, origin: f.or, destination: f.de,
+        duration_hrs: f.dh, notes: f.n
+      })),
+      hub_routes: (minData.hr || []).map(h => ({
+        hub_code: h.hc, hub_name: h.hn, overnight_layover: h.ov, airport_change: h.ac,
+        total_duration_hrs: h.tdh, hub_notes: h.h_n,
+        trunk_flight: h.tf ? {
+          airline: h.tf.al, flight_number: h.tf.fn, departure_date: h.tf.dd, departure_time: h.tf.dt,
+          arrival_date: h.tf.ad, arrival_time: h.tf.at, aircraft: h.tf.air, destination: h.tf.de, origin: h.tf.or
+        } : {},
+        connections: (h.cx || []).map(c => ({
+          airline: c.al, flight_number: c.fn, origin: c.or, destination: c.de,
+          departure_date: c.dd, departure_time: c.dt, arrival_date: c.ad, arrival_time: c.at,
+          layover_hrs: c.lh, layover_note: c.ln
+        }))
+      }))
+    };
+
     await setDoc(doc(db, "research", userId), {
-      results: claudeData.content[0].text,
+      results: JSON.stringify(expandedData),
       timestamp: new Date().toISOString(),
       status: "complete"
     });
 
-    console.log("SUCCESS: Results pushed to Firebase.");
+    console.log("SUCCESS: Results expanded and pushed to Firebase.");
 
   } catch (error) {
     console.error("Error:", error.message);
