@@ -112,7 +112,6 @@ exports.handler = async (event) => {
       return { date: parts[0] || "", time: parts[1] || timeStr };
     };
 
-    // V1.2 Upgrade: Pre-calculate durations in JS to save Claude's memory
     const minimizeFlight = (f) => {
       const leg = f.flights?.[0] || f;
       const depData = splitDateTime(leg.departure_airport?.time || f.departure_airport?.time);
@@ -143,7 +142,6 @@ exports.handler = async (event) => {
       });
     };
 
-    // V1.1 Magic: Ensures trunkFilter works perfectly!
     const filterAndMinimizeTrunk = (flights) => {
       return (flights || [])
         .filter(f => !f.flights || f.flights.length === 1)
@@ -178,12 +176,10 @@ exports.handler = async (event) => {
 
     const rawTrunkCleaned = dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])])).sort(sortByDuration);
 
-    // V1.2 SCALABILITY SAFETY: Slice arrays so we never crash Claude if trunkFilter is 'all'
     const directFlightsArray = rawTrunkCleaned.filter(f => destArray.includes(f.dest)).slice(0, 20);
     const hubFlightsArray = rawTrunkCleaned.filter(f => !destArray.includes(f.dest)).slice(0, 60);
     const connFlightsArray = dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])])).sort(sortByDuration);
 
-    // V1.2 Lightweight Pre-Filter: Remove time-traveling flights and cap at 150
     const optimizedConnections = connFlightsArray.filter(c => {
       return hubFlightsArray.some(h => {
         if (h.dest !== c.origin) return false;
@@ -208,7 +204,7 @@ exports.handler = async (event) => {
       return; 
     }
 
-    // 4. THE HYBRID PROMPT (Dynamic Rules + v1.2 Schema/Timeout Protection)
+    // 4. THE PROMPT
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
@@ -217,15 +213,13 @@ exports.handler = async (event) => {
     =========================================
     ${JSON.stringify(liveFlights)}
     
-    CRITICAL DATA INTEGRITY & EXTRACTION RULES:
-    1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
-    2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
-    3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays. Limit to a MAXIMUM of 8 HUB ROUTES. List a MAXIMUM of 4 connections per hub. 
-       - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code.
-    4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible.
-    5. NON-REV OPTIMIZATION & WARNINGS: Prioritize shortest total durations. Calculate 'tdh' (total duration hrs). Set 'ov' (overnight layover) and 'ac' (airport change) booleans.
-    6. BREVITY: Keep all notes ('n', 'h_n', 'ln') highly actionable but UNDER 15 WORDS. If no specific advice is needed, output "".
-    7. MINIFIED SCHEMA: To prevent timeouts, use these exact short keys. Use single quotes (') for text; NEVER double quotes (") inside values.
+    CRITICAL BEHAVIORAL RULES:
+    1. ZERO HALLUCINATIONS: Use ONLY the provided flight numbers from the data.
+    2. HUB STRATEGY: Limit results to the TOP 8 HUB ROUTES. List a MAXIMUM of 4 connections per hub.
+    3. ACTIONABLE ADVICE: Keep notes ('n', 'h_n', 'ln') under 15 words. ONLY include a note if it provides specific standby value.
+    4. DATA INTEGRITY: Do not calculate anything. Use provided dh/tdh/lh values exactly.
+    5. STRICT JSON SYNTAX: You are strictly forbidden from using double quotes (") inside any text values. Use single quotes (') instead.
+    6. MINIFIED SCHEMA: Use the exact keys shown below. Do not add any other keys.
 
     {
       "df": [
@@ -271,7 +265,13 @@ exports.handler = async (event) => {
     const jsonMatch = rawJsonText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON found in Claude response");
     
-    const minData = JSON.parse(jsonMatch[0]);
+    // 🛡️ THE BULLETPROOF JSON CLEANER
+    // Automatically fixes LLM unescaped newline hallucinations and illegal trailing commas
+    let cleanJson = jsonMatch[0]
+      .replace(/[\r\n]+/g, " ") // Converts text to a single line to neutralize mid-string line breaks
+      .replace(/,(\s*[}\]])/g, "$1"); // Deletes illegal trailing commas right before closing brackets
+    
+    const minData = JSON.parse(cleanJson);
     
     const expandedData = {
       direct_flights: (minData.df || []).map(f => ({
