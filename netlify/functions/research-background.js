@@ -213,9 +213,9 @@ exports.handler = async (event) => {
    CRITICAL DATA INTEGRITY & EXTRACTION RULES:
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
     2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
-    3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays to build your routes. 
+    3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays to build your routes. LIMIT yourself to a MAXIMUM of 8 connection options per hub to provide variety while saving space.
     4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
-    5. NON-REV OPTIMIZATION & WARNINGS: Prioritize routes with the shortest total durations. You MUST calculate and provide the total_duration_hrs for the entire journey. You MUST set 'overnight_layover' to true if the connection departs on a different calendar day than the trunk arrives. You MUST set 'airport_change' to true if the connection departs from a different airport than the trunk arrived at (e.g., arrived HND, departing NRT).
+    5. NON-REV OPTIMIZATION & WARNINGS: Prioritize routes with the shortest total durations. You MUST calculate total_duration_hrs. You MUST set 'overnight_layover' and 'airport_change' to true if applicable. Ensure text in 'notes', 'hub_notes', and 'layover_note' is highly actionable and helpful for standby travelers, but keep it concise (Maximum 50 words per note).
     6. JSON SYNTAX VALIDATION: You are generating a massive JSON object. You MUST double-check your syntax. Ensure EVERY object inside an array is separated by a comma. Do NOT miss a single comma.
     7. STRICT JSON FORMATTING & SCHEMA: 
        - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks.
@@ -237,9 +237,9 @@ exports.handler = async (event) => {
              "total_duration_hrs": 24.5,
              "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_date": "2026-04-10", "departure_time": "10:30", "arrival_date": "2026-04-11", "arrival_time": "15:30", "aircraft": "777", "destination": "ICN" },
              "connections": [
-               { "airline": "OZ", "flight_number": "OZ 102", "origin": "ICN", "destination": "NRT", "departure_date": "2026-04-12", "departure_time": "18:00", "arrival_date": "2026-04-12", "arrival_time": "20:30", "layover_hrs": 26.5 }
+               { "airline": "OZ", "flight_number": "OZ 102", "origin": "ICN", "destination": "NRT", "departure_date": "2026-04-12", "departure_time": "18:00", "arrival_date": "2026-04-12", "arrival_time": "20:30", "layover_hrs": 26.5, "layover_note": "Connect via Seoul." }
              ],
-             "hub_notes": "Connect via Seoul."
+             "hub_notes": "Overnight required."
            }
          ]
        }`;
