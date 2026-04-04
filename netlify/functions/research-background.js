@@ -136,7 +136,6 @@ exports.handler = async (event) => {
     const hubFlightsArray = rawTrunk.filter(f => !destArray.includes(f.dest)).slice(0, 40);
     const connFlightsRaw = dedupeFlights([...(connData.best_flights || []), ...(connData.other_flights || [])].map(minimizeFlight));
 
-    // 3.5 PRE-FILTER IMPOSSIBLE CONNECTIONS (Save Claude's Brain)
     const optimizedConnections = connFlightsRaw.filter(c => {
       return hubFlightsArray.some(h => {
         if (h.dest !== c.origin) return false;
@@ -152,14 +151,12 @@ exports.handler = async (event) => {
       connections_from_hubs: optimizedConnections.slice(0, 80)
     };
 
-    console.log(`DEBUG: Sending ${directFlightsArray.length} Direct and ${hubFlightsArray.length} Hub Flights to Claude.`);
-
     if (directFlightsArray.length === 0 && hubFlightsArray.length === 0) {
       await setDoc(doc(db, "research", userId), { results: JSON.stringify({ direct_flights: [], hub_routes: [] }), status: "complete" });
       return; 
     }
 
-   // 4. THE ZERO-TOLERANCE SONNET 3.5 PROMPT (MINIFIED)
+   // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT (MINIFIED)
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
@@ -188,7 +185,7 @@ exports.handler = async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-20240620", 
+        model: "claude-sonnet-4-6", 
         max_tokens: 8192,
         messages: [{ role: "user", content: enhancedPrompt }]
       })
