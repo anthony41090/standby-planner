@@ -116,7 +116,6 @@ exports.handler = async (event) => {
       return { date: parts[0] || "", time: parts[1] || timeStr };
     };
 
-    // simplified back to singular leg since we forced stops=1
     const minimizeFlight = (f) => {
       const leg = f.flights?.[0] || f;
       const depData = splitDateTime(leg.departure_airport?.time || f.departure_airport?.time);
@@ -148,7 +147,6 @@ exports.handler = async (event) => {
 
     const filterAndMinimizeTrunk = (flights) => {
       return (flights || [])
-        // DOUBLE GUARDRAIL: Delete any flight array that has more than 1 leg
         .filter(f => !f.flights || f.flights.length === 1) 
         .map(minimizeFlight)
         .filter(f => {
@@ -171,7 +169,7 @@ exports.handler = async (event) => {
 
     const filterAndMinimizeConnections = (flights) => {
       return (flights || [])
-        .filter(f => !f.flights || f.flights.length === 1) // DOUBLE GUARDRAIL
+        .filter(f => !f.flights || f.flights.length === 1)
         .map(minimizeFlight);
     };
 
@@ -183,7 +181,6 @@ exports.handler = async (event) => {
 
     const rawTrunkCleaned = dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])])).sort(sortByDuration);
 
-    // NEW: We manually separate Direct vs Hubs so Claude doesn't have to guess
     const directFlightsArray = rawTrunkCleaned.filter(f => destArray.includes(f.dest)).slice(0, 20);
     const hubFlightsArray = rawTrunkCleaned.filter(f => !destArray.includes(f.dest)).slice(0, 60);
     const connFlightsArray = dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])])).sort(sortByDuration).slice(0, 150);
@@ -197,7 +194,6 @@ exports.handler = async (event) => {
     const validHubs = [...new Set(hubFlightsArray.map(f => f.dest))];
 
     console.log(`DEBUG: Found ${directFlightsArray.length} Direct Flights and ${hubFlightsArray.length} Hub Flights.`);
-    console.log(`DEBUG: Pre-Validated Hubs with actual flights: ${validHubs.join(', ') || "None"}`);
 
     if (directFlightsArray.length === 0 && hubFlightsArray.length === 0) {
       console.log("CIRCUIT BREAKER: 0 flights found.");
@@ -218,26 +214,29 @@ exports.handler = async (event) => {
     1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
     2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
     3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays to build your routes. 
-       - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code. 
     4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible (confirmed ticket required).
-    5. NON-REV OPTIMIZATION: Prioritize routes with the shortest total durations and larger widebody aircraft (e.g., 777, 787, A350, A380).
+    5. NON-REV OPTIMIZATION & WARNINGS: Prioritize routes with the shortest total durations. You MUST calculate and provide the total_duration_hrs for the entire journey. You MUST set 'overnight_layover' to true if the connection departs on a different calendar day than the trunk arrives. You MUST set 'airport_change' to true if the connection departs from a different airport than the trunk arrived at (e.g., arrived HND, departing NRT).
     6. STRICT JSON FORMATTING & SCHEMA: 
        - Return ONLY the raw JSON object. Do NOT wrap the JSON in markdown code blocks.
        - Start your response exactly with the { character.
        - DO NOT use double quotation marks (") inside ANY of your text values or notes. Use single quotes (') instead.
        - NEVER output "TBD".
+       - You MUST include 'departure_date' and 'arrival_date' for every leg.
        - You MUST use this exact JSON schema structure:
        {
          "direct_flights": [
-           { "airline": "UA", "flight_number": "UA 837", "departure_time": "11:40", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct service" }
+           { "airline": "UA", "flight_number": "UA 837", "departure_date": "2026-04-10", "departure_time": "11:40", "arrival_date": "2026-04-11", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct service" }
          ],
          "hub_routes": [
            {
              "hub_code": "ICN",
              "hub_name": "Seoul",
-             "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_time": "10:30", "arrival_time": "15:30", "aircraft": "777", "destination": "ICN" },
+             "overnight_layover": true,
+             "airport_change": false,
+             "total_duration_hrs": 24.5,
+             "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_date": "2026-04-10", "departure_time": "10:30", "arrival_date": "2026-04-11", "arrival_time": "15:30", "aircraft": "777", "destination": "ICN" },
              "connections": [
-               { "airline": "OZ", "flight_number": "OZ 102", "destination": "NRT", "departure_time": "18:00", "arrival_time": "20:30", "layover_hrs": 3 }
+               { "airline": "OZ", "flight_number": "OZ 102", "origin": "ICN", "destination": "NRT", "departure_date": "2026-04-12", "departure_time": "18:00", "arrival_date": "2026-04-12", "arrival_time": "20:30", "layover_hrs": 26.5 }
              ],
              "hub_notes": "Connect via Seoul."
            }

@@ -1262,66 +1262,6 @@ function Research({trip,onDone,onSkip}){
     }
     addLog(`Trunk carriers (${cabinJ?"J":"Y"}): ${trunkCarriers.join(", ")}${!trunkFilter?" — AS/HA = HOME priority":""}`);
     addLog(`Connection carriers: ${connCarriers.join(", ")}`);
-    let routingHubInstructions = "";
-    if (matchedData?.routingHubs) {
-      let hubs = matchedData.routingHubs;
-      if (trunkFilter) {
-        if (trunkFilter === "UA" || trunkFilter === "AS") {
-          hubs = hubs.filter(h => h.uaDirect || (trunkFilter==="AS" && h.isHome) || h.code==="HNL");
-        } else if (trunkFilter === "HA") {
-          hubs = hubs.filter(h => h.code==="HNL" || h.isHome);
-        } else {
-          hubs = hubs.filter(h => !h.uaDirect && h.connPartners.includes(trunkFilter));
-          if (hubs.length === 0) hubs = matchedData.routingHubs.filter(h => !h.uaDirect);
-        }
-      }
-      const directHubs = hubs.filter(h=>h.uaDirect);
-      const partnerHubs = hubs.filter(h=>!h.uaDirect);
-      const trunkLabel = trunkFilter ? (AGREEMENTS[trunkFilter]?.name||trunkFilter) : "UA/AS";
-      routingHubInstructions = `
-MANDATORY ROUTING HUBS TO CHECK — search for ${trunkLabel} flights to ALL of these from ${originCode}:
-${directHubs.length>0?`
-${trunkLabel} ROUTES TO ASIAN HUBS:
-${directHubs.map(h=>`- ${originCode}  ${h.code} (${h.name}): ${h.note}${h.connPartners.length>0?`  then connections on ${h.connPartners.join("/")} to final destination`:""}`).join("\n")}
-`:""}${partnerHubs.length>0?`
-PARTNER HUB ROUTES:
-${partnerHubs.map(h=>`- Via ${h.code} (${h.name}): ${h.note}. Connections: ${h.connPartners.join(", ")}`).join("\n")}
-`:""}
-You MUST include a hub_route entry for EACH hub where you find a viable ${trunkLabel} flight from ${originCode}.`;
-      addLog(`Routing hubs: ${hubs.map(h=>h.code).join(", ")}`);
-    }
-
-    const airlineConstraint = trunkFilter
-      ? `\nIMPORTANT: The traveler has selected ${AGREEMENTS[trunkFilter]?.name||trunkFilter} (${trunkFilter}) as their ONLY trunk airline. Search ONLY for ${trunkFilter} flights from ${originCode} to hub airports.`
-      : `\nCRITICAL: Alaska Airlines (AS) and Hawaiian Airlines (HA) are the traveler's HOME airlines. Always search AS/HA routes first.`;
-
-    const prompt = `You are a helpful travel assistant for a non-rev standby app. Your task is to find flight schedules and map them into JSON.
-${airlineConstraint}
-${routingHubInstructions}
-
-RULES:
-1. ORIGIN: Find flights departing from ${originCode.split(",").join(" or ")}.
-2. DESTINATION: Find ALL non-stop flights from ${originCode.split(",").join("/")} to ${searchCode}. This is your top priority.
-3. HUB ROUTING: Find connections via these hubs: ${dynamicHubs}. Select ONLY the best 10 hub routes total.
-4. AIRLINES: Focus on UA, AS, HA, and primary partners, but all major carriers are eligible.
-5. ACCURACY: Use real flight numbers. If aircraft or duration is missing, use placeholders (Boeing/11).
-Return ONLY valid JSON in this format:
-{
-  "direct_flights": [
-    { "airline": "UA", "flight_number": "UA 837", "departure_time": "11:40", "arrival_time": "15:00", "aircraft": "777", "origin": "SFO", "destination": "NRT", "duration_hrs": 11, "notes": "Direct United service" }
-  ],
-  "hub_routes": [
-    {
-      "hub_code": "ICN",
-      "hub_name": "Seoul",
-      "trunk_flight": { "airline": "UA", "flight_number": "UA 893", "departure_time": "10:30", "arrival_time": "15:30", "aircraft": "777", "origin": "SFO" },
-      "connections": [
-        { "airline": "OZ", "flight_number": "OZ 102", "destination": "NRT", "departure_time": "18:00", "arrival_time": "20:30", "layover_hrs": 3 }
-      ],
-      "hub_notes": "Connect via Seoul Incheon."
-    }
-  ]
-}`;
 
     addLog("Initiating Claude Research (Priority 1)...");
 
@@ -1340,7 +1280,7 @@ Return ONLY valid JSON in this format:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          prompt: prompt,
+          prompt: "Analyze routes",
           userId: "anthony_alonso",
           origin: originCode,
           finalDestination: searchCode,
@@ -1387,6 +1327,9 @@ Return ONLY valid JSON in this format:
                     cabinAvail: cabinJ ? "J" : "Y",
                     sfoDep: f.departure_time,
                     hubArr: f.arrival_time,
+                    depDate: f.departure_date,
+                    arrDate: f.arrival_date,
+                    durationHrs: f.duration_hrs,
                     aircraft: f.aircraft,
                     origin: f.origin || originCode.split(',')[0],
                     note: f.notes || ""
@@ -1405,8 +1348,9 @@ Return ONLY valid JSON in this format:
                       id: `c-${uid()}`,
                       conn: `${cp?.name || c.airline} ${c.flight_number}  ${c.destination}`,
                       fn: c.flight_number, cd: c.departure_time, ac: c.aircraft, at: c.arrival_time,
+                      cDepDate: c.departure_date, cArrDate: c.arrival_date, cOrigin: c.origin,
                       apt: c.destination, airlineCode: c.airline, layoverHrs: c.layover_hrs, 
-                      cabinAvail: cp?.j ? "J" : "Y"
+                      cabinAvail: cp?.j ? "J" : "Y", el: !!cp
                     };
                   });
 
@@ -1414,8 +1358,13 @@ Return ONLY valid JSON in this format:
                     id: `r-${uid()}`, isDirect: false, trunkCarrier: trunkCode,
                     fullFlightNum: trunk.flight_number, sfoDep: trunk.departure_time,
                     hubArr: trunk.arrival_time,
+                    depDate: trunk.departure_date,
+                    arrDate: trunk.arrival_date,
                     origin: trunk.origin || originCode.split(',')[0],
                     hub: hr.hub_code, aircraft: trunk.aircraft,
+                    overnightLayover: hr.overnight_layover,
+                    airportChange: hr.airport_change,
+                    durationHrs: hr.total_duration_hrs,
                     note: `Via ${hr.hub_name}${hr.hub_notes ? ` · ${hr.hub_notes}` : ""}`,
                     connections: conns
                   });
@@ -1666,6 +1615,11 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
           const dl = getDeadlineInfo(carrierCode);
           const rules = AIRLINE_RULES[carrierCode] || {};
 
+          // V1.2 Sprint 2: Visual Warnings for Standby Users
+          const warnings = [];
+          if (r.airportChange) warnings.push({ label: "🚨 AIRPORT TRANSFER REQUIRED", desc: `Must change airports in ${r.hub}` });
+          if (r.overnightLayover) warnings.push({ label: "⚠️ OVERNIGHT LAYOVER", desc: "Connection departs the next day" });
+
           return(<div key={r.id} style={{borderRadius:12,overflow:"hidden",border:`1.5px solid ${tm.border}`,opacity:r.open===0?.4:1}}>
             <div style={{background:tm.bg,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12,borderBottom:`1px solid ${tm.border}`}}>
               <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
@@ -1686,9 +1640,20 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
 
                   <div style={{fontSize:11,color:"#4b5563"}}>
                     <strong style={{color:"#111827"}}>{r.origin || trip.origin.slice(0,3).toUpperCase()}</strong>  <strong style={{color:"#111827"}}>{r.hub || r.destination}</strong> · 
-                    Dep <span style={{fontFamily:"monospace",color:"#374151",fontWeight:600}}>{r.sfoDep || r.departure_time}</span> · 
-                    Arr <span style={{fontFamily:"monospace",color:"#374151",fontWeight:600}}>{r.hubArr || r.arrival_time}</span>
+                    Dep <span style={{fontFamily:"monospace",color:"#374151",fontWeight:600}}>{r.depDate ? `${r.depDate.slice(5)} ` : ""}{r.sfoDep || r.departure_time}</span> · 
+                    Arr <span style={{fontFamily:"monospace",color:"#374151",fontWeight:600}}>{r.arrDate ? `${r.arrDate.slice(5)} ` : ""}{r.hubArr || r.arrival_time}</span>
+                    {r.durationHrs && <span style={{marginLeft:8, padding: "2px 6px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 700}}>⏱ {r.durationHrs}h total</span>}
                   </div>
+
+                  {warnings.length > 0 && (
+                    <div style={{marginTop:8, display:"flex", flexDirection:"column", gap:6}}>
+                      {warnings.map((w,i) => (
+                        <div key={i} style={{padding:"6px 10px", background:w.label.includes("AIRPORT")?"#fef2f2":"#fffbeb", border:`1px solid ${w.label.includes("AIRPORT")?"#fca5a5":"#fcd34d"}`, borderRadius:6, color:w.label.includes("AIRPORT")?"#991b1b":"#92400e", fontSize:11}}>
+                          <span style={{fontWeight:800}}>{w.label}</span> {w.desc && <span style={{marginLeft:4}}>— {w.desc}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* EMBEDDED DAY-OF CHECKLIST RULES */}
                   <div style={{marginTop:8, padding:"8px 12px", background:"#f8fafc", borderRadius:6, border:"1px solid #e2e8f0", display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:8, fontSize:11}}>
@@ -1720,7 +1685,7 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
             </div>
             {r.isDirect?(
               <div style={{background:"#fff",padding:"10px 18px",display:"flex",alignItems:"center",flexWrap:"wrap",gap:10}}>
-                <span style={{fontSize:12,fontWeight:700,color:"#2563eb"}}>{r.connections?.[0]?.at || r.arrival_time}</span>
+                <span style={{fontSize:12,fontWeight:700,color:"#2563eb"}}>{r.connections?.[0]?.cArrDate ? `${r.connections[0].cArrDate.slice(5)} ` : ""}{r.connections?.[0]?.at || r.arrival_time}</span>
                 <span style={{fontSize:10,color:"#64748b"}}>{r.connections?.[0]?.apt || r.destination}</span>
                 <Btn onClick={()=>setExp(p=>({...p,[r.id+"_rules"]:!p[r.id+"_rules"]}))} dim>Airline Rules</Btn>
                 <div style={{flex:1}}/>
@@ -1739,12 +1704,12 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
                         <tr key={c.id} style={{background:ci%2===0?"#fff":"#f9fafb",borderBottom:isExp?"none":"1px solid #f0f0f0"}}>
                           <td style={{padding:"8px 10px",fontWeight:500,color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.conn}{c.layoverHrs&&<span style={{marginLeft:4,fontSize:9,color:"#64748b"}}>({c.layoverHrs}h)</span>}</td>
                           <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569"}}>{c.fn}</td>
-                          <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569"}}>{c.cd}</td>
+                          <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569",whiteSpace:"nowrap"}}>{c.cDepDate ? `${c.cDepDate.slice(5)} ` : ""}{c.cd}</td>
                           <td style={{padding:"8px 10px",color:"#64748b"}}>{c.ac}</td>
-                          <td style={{padding:"8px 10px",fontWeight:700,color:"#2563eb"}}>{c.at}</td>
+                          <td style={{padding:"8px 10px",fontWeight:700,color:"#2563eb",whiteSpace:"nowrap"}}>{c.cArrDate ? `${c.cArrDate.slice(5)} ` : ""}{c.at}</td>
                           <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569"}}>{c.apt}</td>
                           <td style={{padding:"8px 10px"}}><span style={{fontSize:9,padding:"1px 5px",borderRadius:99,background:c.cabinAvail==="J"?"#fef3c7":"#f3f4f6",color:c.cabinAvail==="J"?"#92400e":"#475569",fontWeight:600}}>{c.cabinAvail==="J"?"J":"Y"}</span></td>
-                          <td style={{padding:"8px 10px"}}>{c.el?<span style={{color:"#059669",fontWeight:600}}>Yes</span>:<span style={{color:"#dc2626"}}>No</span>}</td>
+                          <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{c.el ? <span style={{color:"#059669",fontWeight:800}}>✓ ZED</span> : <span style={{color:"#64748b",fontWeight:600}}>Cash Tkt</span>}</td>
                           <td style={{padding:"8px 10px"}}>{ar&&<Btn onClick={()=>setExp(p=>({...p,[c.id]:!p[c.id]}))} dim>Rules</Btn>}</td>
                           <td style={{padding:"8px 10px",minWidth:100}}><input value={cu.ticket||""} onChange={e=>sf(c.id,"ticket",e.target.value)} placeholder="Conf#" style={{width:"100%",fontSize:10,border:"none",borderBottom:"1px solid #e5e7eb",background:"transparent",outline:"none",color:"#1e293b",padding:"2px 0"}}/></td>
                           <td style={{padding:"8px 10px",minWidth:120}}><input value={cu.notes||""} onChange={e=>sf(c.id,"notes",e.target.value)} placeholder="Notes…" style={{width:"100%",fontSize:10,border:"none",borderBottom:"1px solid #e5e7eb",background:"transparent",outline:"none",color:"#1e293b",padding:"2px 0"}}/></td>
