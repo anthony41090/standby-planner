@@ -44,7 +44,7 @@ const originCityToAirports = {
 };
 
 // NON-REV STANDBY PLANNER v3
-// Alaska Airlines ZED/MIBA · Full agreement database · Any origin  Any dest
+// Alaska Airlines ZED/MIBA · Full agreement database · Any origin -> Any dest
 
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 3958.8; // Radius of the Earth in miles
@@ -70,7 +70,8 @@ const HUB_COORDINATES = {
   "SFO": { lat: 37.621, lon: -122.378 }, "LAX": { lat: 33.941, lon: -118.408 }, "DFW": { lat: 32.899, lon: -97.040 },
   "ATL": { lat: 33.640, lon: -84.427 }, "MIA": { lat: 25.795, lon: -80.287 }, "IAD": { lat: 38.944, lon: -77.456 },
   "DEN": { lat: 39.856, lon: -104.673 }, "SEA": { lat: 47.450, lon: -122.308 }, "IAH": { lat: 29.990, lon: -95.336 },
-  "BOS": { lat: 42.365, lon: -71.009 }, "PHX": { lat: 33.434, lon: -112.008 }, "YVR": { lat: 49.196, lon: -123.181 },
+  "BOS": { lat: 42.365, lon: -71.009 }, 
+  "PHX": { lat: 33.434, lon: -112.008 }, "YVR": { lat: 49.196, lon: -123.181 },
   "YYZ": { lat: 43.677, lon: -79.624 }, "MEX": { lat: 19.436, lon: -99.072 },
   "FRA": { lat: 50.033, lon: 8.570 }, "MUC": { lat: 48.353, lon: 11.775 }, "LHR": { lat: 51.470, lon: -0.454 },
   "CDG": { lat: 49.009, lon: 2.547 }, "AMS": { lat: 52.310, lon: 4.768 }, "MAD": { lat: 40.491, lon: -3.567 },
@@ -367,19 +368,19 @@ const REGIONS = {
       {code:"PVG",name:"Shanghai Pudong",uaDirect:true,note:"UA direct from SFO/LAX/EWR/ORD/IAH. Overnight needed. Connect MU/NH/JL to Japan.",connPartners:["MU","NH","JL"]},
       {code:"HKG",name:"Hong Kong",uaDirect:true,note:"UA direct from SFO/LAX/EWR. Connect CX/HX to regional.",connPartners:["CX","HX","UO"]},
       {code:"MNL",name:"Manila",uaDirect:true,note:"UA direct from SFO/LAX. PR (J class!) from MNL to NRT/HND.",connPartners:["PR","JL","NH"]},
-      {code:"HNL",name:"Honolulu",uaDirect:false,note:"HOME airline hub. AS/UA from US  HA/UA/JL/NH/WN onward to NRT/HND/KIX/ICN.",connPartners:["HA","UA","JL","NH","KE","OZ","WN"],isHome:true},
-      {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) from US  QR onward to NRT/HND/KIX/ICN/HKG/BKK/SIN etc.",connPartners:["QR"]},
-      {code:"HEL",name:"Helsinki",uaDirect:false,note:"AY (J class) from US  AY onward to NRT/HND. Shortest Europe-Asia routing.",connPartners:["AY"]},
-      {code:"LHR",name:"London Heathrow",uaDirect:false,note:"BA (J class) from US  BA/JL onward to NRT/HND.",connPartners:["BA","JL"]},
-      {code:"FRA",name:"Frankfurt",uaDirect:false,note:"LH (J class) from US  LH/NH onward to NRT/HND.",connPartners:["LH","NH"]},
-      {code:"YVR",name:"Vancouver",uaDirect:false,note:"AC (J class) from US  AC onward to NRT/HND. Good Pacific routing.",connPartners:["AC"]},
+      {code:"HNL",name:"Honolulu",uaDirect:false,note:"HOME airline hub. AS/UA from US -> HA/UA/JL/NH/WN onward to NRT/HND/KIX/ICN.",connPartners:["HA","UA","JL","NH","KE","OZ","WN"],isHome:true},
+      {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) from US -> QR onward to NRT/HND/KIX/ICN/HKG/BKK/SIN etc.",connPartners:["QR"]},
+      {code:"HEL",name:"Helsinki",uaDirect:false,note:"AY (J class) from US -> AY onward to NRT/HND. Shortest Europe-Asia routing.",connPartners:["AY"]},
+      {code:"LHR",name:"London Heathrow",uaDirect:false,note:"BA (J class) from US -> BA/JL onward to NRT/HND.",connPartners:["BA","JL"]},
+      {code:"FRA",name:"Frankfurt",uaDirect:false,note:"LH (J class) from US -> LH/NH onward to NRT/HND.",connPartners:["LH","NH"]},
+      {code:"YVR",name:"Vancouver",uaDirect:false,note:"AC (J class) from US -> AC onward to NRT/HND. Good Pacific routing.",connPartners:["AC"]},
     ],
     hubStrategy:[
       {hub:"Direct",note:"UA to NRT/HND/KIX; HA to NRT/HND/KIX from HNL; AS to NRT (seasonal) — HOME airline = highest priority"},
-      {hub:"HNL",carrier:"ASHA",note:"AS from US cities to HNL, then HA J class onward to NRT/HND/KIX/ICN — both HOME airline!"},
-      {hub:"ICN",carrier:"UAKE/OZ",note:"UA to Seoul, then Korean Air or Asiana economy to Japan"},
-      {hub:"TPE",carrier:"UABR/CI/JX/IT",note:"UA to Taipei, then EVA/China Airlines/Starlux/Tigerair to Japan"},
-      {hub:"PVG",carrier:"UAMU/NH/JL",note:"UA to Shanghai, overnight required, then China Eastern/ANA/JAL to Japan"},
+      {hub:"HNL",carrier:"AS->HA",note:"AS from US cities to HNL, then HA J class onward to NRT/HND/KIX/ICN — both HOME airline!"},
+      {hub:"ICN",carrier:"UA->KE/OZ",note:"UA to Seoul, then Korean Air or Asiana economy to Japan"},
+      {hub:"TPE",carrier:"UA->BR/CI/JX/IT",note:"UA to Taipei, then EVA/China Airlines/Starlux/Tigerair to Japan"},
+      {hub:"PVG",carrier:"UA->MU/NH/JL",note:"UA to Shanghai, overnight required, then China Eastern/ANA/JAL to Japan"},
       {hub:"DOH",carrier:"QR",note:"Qatar J class both legs via Doha — premium but long routing"},
       {hub:"HEL",carrier:"AY",note:"Finnair J class via Helsinki — shortest Europe-Asia path"},
       {hub:"LHR",carrier:"BA",note:"British Airways J class via London — oneworld connections"},
@@ -402,18 +403,18 @@ const REGIONS = {
       {code:"TPE",name:"Taipei Taoyuan",uaDirect:true,note:"UA from SFO/LAX. Connect BR/CI economy to BKK/SIN/MNL/SGN/KUL.",connPartners:["BR","CI"]},
       {code:"HKG",name:"Hong Kong",uaDirect:true,note:"UA from SFO/LAX/EWR. CX economy hub.",connPartners:["CX","HX","UO"]},
       {code:"PVG",name:"Shanghai Pudong",uaDirect:true,note:"UA from SFO/LAX/EWR/ORD/IAH. Overnight. MU economy connections.",connPartners:["MU"]},
-      {code:"HNL",name:"Honolulu",uaDirect:false,note:"HOME airline hub. AS/UA from US  HA/UA and partners from HNL.",connPartners:["HA","UA","PR"],isHome:true},
+      {code:"HNL",name:"Honolulu",uaDirect:false,note:"HOME airline hub. AS/UA from US -> HA/UA and partners from HNL.",connPartners:["HA","UA","PR"],isHome:true},
       {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) excellent connections.",connPartners:["QR"]},
       {code:"AUH",name:"Abu Dhabi",uaDirect:false,note:"EY (J class) connects to BKK/SIN/KUL/CGK.",connPartners:["EY"]},
-      {code:"LHR",name:"London Heathrow",uaDirect:false,note:"BA (J class) from US  BA/CX/MH/TG/SQ economy onward.",connPartners:["BA","CX","MH","TG","SQ"]},
-      {code:"HEL",name:"Helsinki",uaDirect:false,note:"AY (J class) from US  AY economy to BKK/SIN/HKG.",connPartners:["AY"]},
+      {code:"LHR",name:"London Heathrow",uaDirect:false,note:"BA (J class) from US -> BA/CX/MH/TG/SQ economy onward.",connPartners:["BA","CX","MH","TG","SQ"]},
+      {code:"HEL",name:"Helsinki",uaDirect:false,note:"AY (J class) from US -> AY economy to BKK/SIN/HKG.",connPartners:["AY"]},
     ],
     hubStrategy:[
       {hub:"Direct",note:"UA to SIN/MNL; PR J class to MNL from US gateways"},
-      {hub:"NRT/HND",carrier:"UAJL/NH/CX/TG",note:"Tokyo hub — excellent economy connections to all SE Asia"},
-      {hub:"ICN",carrier:"UAKE/OZ",note:"Seoul — KE/OZ fly to all major SE Asia cities (economy)"},
-      {hub:"HKG",carrier:"UACX",note:"Cathay Pacific economy mega-hub for SE Asia from HKG"},
-      {hub:"TPE",carrier:"UABR/CI",note:"EVA/China Airlines economy to BKK/SIN/MNL/SGN/KUL"},
+      {hub:"NRT/HND",carrier:"UA->JL/NH/CX/TG",note:"Tokyo hub — excellent economy connections to all SE Asia"},
+      {hub:"ICN",carrier:"UA->KE/OZ",note:"Seoul — KE/OZ fly to all major SE Asia cities (economy)"},
+      {hub:"HKG",carrier:"UA->CX",note:"Cathay Pacific economy mega-hub for SE Asia from HKG"},
+      {hub:"TPE",carrier:"UA->BR/CI",note:"EVA/China Airlines economy to BKK/SIN/MNL/SGN/KUL"},
       {hub:"DOH",carrier:"QR",note:"Qatar J class both legs — BKK/SIN/KUL/CGK/DPS all served"},
       {hub:"HEL",carrier:"AY",note:"Finnair J class via Helsinki — BKK/SIN direct"},
     ],
@@ -473,7 +474,7 @@ const REGIONS = {
       {hub:"DOH",carrier:"QR",note:"Qatar J class — best hub for the entire Gulf/ME region"},
       {hub:"AUH",carrier:"EY",note:"Etihad J class — UAE base, good Gulf connections"},
       {hub:"IST",carrier:"UA/TK",note:"UA direct to IST, then TK economy to every ME city"},
-      {hub:"LHR",carrier:"BA",note:"BA J class from US  BA economy to ME"},
+      {hub:"LHR",carrier:"BA",note:"BA J class from US -> BA economy to ME"},
       {hub:"DXB",carrier:"EK",note:"Emirates economy — massive ME hub (no J agreement)"},
       {hub:"AMM",carrier:"RJ",note:"Royal Jordanian J class — direct from US"},
     ],
@@ -492,17 +493,17 @@ const REGIONS = {
       {code:"IST",name:"Istanbul",uaDirect:true,note:"UA from IAD/EWR. TK economy to DEL/BOM/MAA/BLR/CCU/CMB/ISB/LHE/KHI/DAC/KTM.",connPartners:["TK"]},
       {code:"LHR",name:"London Heathrow",uaDirect:true,note:"UA/AA/BA (J class) from many US cities. BA economy to DEL/BOM/MAA/BLR/CMB/ISB. Also AI economy.",connPartners:["BA","AI"]},
       {code:"FRA",name:"Frankfurt",uaDirect:true,note:"UA/LH from US. LH economy to DEL/BOM/BLR/MAA.",connPartners:["LH","AI"]},
-      {code:"HEL",name:"Helsinki",uaDirect:false,note:"AY (J class) from US  AY to DEL (seasonal).",connPartners:["AY"]},
-      {code:"YYZ",name:"Toronto",uaDirect:false,note:"AC (J class) from US  AC to DEL/BOM.",connPartners:["AC"]},
+      {code:"HEL",name:"Helsinki",uaDirect:false,note:"AY (J class) from US -> AY to DEL (seasonal).",connPartners:["AY"]},
+      {code:"YYZ",name:"Toronto",uaDirect:false,note:"AC (J class) from US -> AC to DEL/BOM.",connPartners:["AC"]},
     ],
     hubStrategy:[
       {hub:"Direct",note:"UA direct DEL (EWR/SFO) and BOM (EWR)"},
       {hub:"DOH",carrier:"QR",note:"Qatar J class — best coverage of entire South Asia, all major cities"},
       {hub:"AUH",carrier:"EY",note:"Etihad J class — strong India/Pakistan network"},
       {hub:"IST",carrier:"UA/TK",note:"UA to IST, then TK economy to all S Asia cities"},
-      {hub:"LHR",carrier:"BA",note:"BA J class from US  BA economy with extensive India network"},
+      {hub:"LHR",carrier:"BA",note:"BA J class from US -> BA economy with extensive India network"},
       {hub:"DXB",carrier:"EK",note:"Emirates economy — massive S Asia hub (no J agreement)"},
-      {hub:"FRA",carrier:"LH",note:"Lufthansa J class  LH economy to DEL/BOM/BLR"},
+      {hub:"FRA",carrier:"LH",note:"Lufthansa J class -> LH economy to DEL/BOM/BLR"},
     ],
   },
   "Oceania":{
@@ -516,16 +517,16 @@ const REGIONS = {
       {code:"AKL",name:"Auckland",uaDirect:true,note:"UA from SFO. HA from HNL. NZ (economy) from LAX/SFO/IAH/ORD.",connPartners:["NZ"]},
       {code:"NAN",name:"Nadi Fiji",uaDirect:false,note:"FJ (J class!) from LAX direct. Connect FJ onward to SYD/AKL/PPT.",connPartners:["FJ"]},
       {code:"PPT",name:"Papeete Tahiti",uaDirect:false,note:"HA from HNL (home airline J!). Also TN/BF from CDG or connect via NAN on FJ.",connPartners:["HA","TN","FJ"]},
-      {code:"HNL",name:"Honolulu",uaDirect:false,note:"HOME airline hub. AS/UA from US  HA/UA/FJ onward to SYD/AKL/PPT/NAN.",connPartners:["HA","UA","FJ","NZ"],isHome:true},
-      {code:"NRT",name:"Tokyo Narita",uaDirect:false,note:"UA from US  JL/NH/QF economy onward to SYD/MEL/AKL.",connPartners:["JL","NH","QF"]},
-      {code:"SIN",name:"Singapore",uaDirect:false,note:"UA from SFO/LAX/EWR  SQ economy to SYD/MEL/BNE/AKL.",connPartners:["SQ"]},
-      {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) from US  QR to MEL/SYD/AKL.",connPartners:["QR"]},
+      {code:"HNL",name:"Honolulu",uaDirect:false,note:"HOME airline hub. AS/UA from US -> HA/UA/FJ onward to SYD/AKL/PPT/NAN.",connPartners:["HA","UA","FJ","NZ"],isHome:true},
+      {code:"NRT",name:"Tokyo Narita",uaDirect:false,note:"UA from US -> JL/NH/QF economy onward to SYD/MEL/AKL.",connPartners:["JL","NH","QF"]},
+      {code:"SIN",name:"Singapore",uaDirect:false,note:"UA from SFO/LAX/EWR -> SQ economy to SYD/MEL/BNE/AKL.",connPartners:["SQ"]},
+      {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) from US -> QR to MEL/SYD/AKL.",connPartners:["QR"]},
     ],
     hubStrategy:[
       {hub:"Direct",note:"UA to SYD/MEL/AKL; QF J to SYD/MEL from LAX; HA J to SYD/AKL/PPT from HNL"},
-      {hub:"HNL",carrier:"ASHA",note:"AS to Honolulu, then HA J class onward — HOME airline, best priority!"},
+      {hub:"HNL",carrier:"AS->HA",note:"AS to Honolulu, then HA J class onward — HOME airline, best priority!"},
       {hub:"NAN",carrier:"FJ",note:"Fiji Airways J class from LAX — connect to SYD/AKL/PPT"},
-      {hub:"NRT",carrier:"UAJL/NH",note:"Tokyo connection — long routing but lots of backup flights"},
+      {hub:"NRT",carrier:"UA->JL/NH",note:"Tokyo connection — long routing but lots of backup flights"},
       {hub:"DOH",carrier:"QR",note:"Qatar J class both legs — ultra-long but premium"},
     ],
   },
@@ -544,7 +545,7 @@ const REGIONS = {
       {code:"IAH",name:"Houston Bush",uaDirect:false,note:"UA domestic hub. Connect UA onward to GRU/EZE/SCL/LIM/BOG/PTY.",connPartners:["UA"]},
       {code:"MIA",name:"Miami",uaDirect:false,note:"AA domestic hub. AA (J class) onward to GRU/EZE/SCL/LIM/BOG.",connPartners:["AA","AV","LA"]},
       {code:"DFW",name:"Dallas-Fort Worth",uaDirect:false,note:"AA hub. AA (J class) to GRU/EZE/SCL/LIM/BOG from DFW.",connPartners:["AA"]},
-      {code:"YYZ",name:"Toronto",uaDirect:false,note:"AC (J class) from US  AC to GRU/EZE/SCL/LIM/BOG.",connPartners:["AC"]},
+      {code:"YYZ",name:"Toronto",uaDirect:false,note:"AC (J class) from US -> AC to GRU/EZE/SCL/LIM/BOG.",connPartners:["AC"]},
     ],
     hubStrategy:[
       {hub:"Direct",note:"UA direct to GRU/EZE/SCL/LIM/BOG from IAH/EWR; AA from MIA/DFW"},
@@ -569,7 +570,7 @@ const REGIONS = {
       {code:"LHR",name:"London Heathrow",uaDirect:true,note:"UA/AA/BA (J class) from many US cities. BA economy to JNB/CPT/NBO/ACC/LOS/CAI/CMN etc.",connPartners:["BA","ET","SA","KQ"]},
       {code:"CDG",name:"Paris CDG",uaDirect:true,note:"UA/AA from US. AF economy extensive Africa network.",connPartners:["AF"]},
       {code:"AMS",name:"Amsterdam",uaDirect:true,note:"UA from US. KL economy to NBO/JNB/ACC/LOS/DAR etc.",connPartners:["KL"]},
-      {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) from US  QR to NBO/JNB/DAR/ADD/CAI/CMN etc.",connPartners:["QR"]},
+      {code:"DOH",name:"Doha",uaDirect:false,note:"QR (J class) from US -> QR to NBO/JNB/DAR/ADD/CAI/CMN etc.",connPartners:["QR"]},
       {code:"FRA",name:"Frankfurt",uaDirect:true,note:"UA/LH from US. LH economy to NBO/JNB/CAI/ADD etc.",connPartners:["LH","ET"]},
       {code:"CMN",name:"Casablanca",uaDirect:false,note:"AT (economy) connect from CDG/LHR/IST.",connPartners:["AT"]},
       {code:"NBO",name:"Nairobi JKIA",uaDirect:false,note:"Connect via ADD (ET), IST (TK), LHR (BA), DOH (QR), AMS (KL).",connPartners:["ET","KQ"]},
@@ -577,7 +578,7 @@ const REGIONS = {
     hubStrategy:[
       {hub:"IST",carrier:"UA/TK",note:"Turkish mega-hub — best single-hub coverage of Africa (30+ cities, economy)"},
       {hub:"ADD",carrier:"ET",note:"Ethiopian Addis hub — economy, intra-Africa king (60+ cities)"},
-      {hub:"LHR",carrier:"BA",note:"BA J class from US  BA economy to many African capitals"},
+      {hub:"LHR",carrier:"BA",note:"BA J class from US -> BA economy to many African capitals"},
       {hub:"DOH",carrier:"QR",note:"Qatar J class — NBO/JNB/DAR/ADD/CAI and more"},
       {hub:"CDG/AMS",carrier:"AF/KL",note:"Air France + KLM economy — strong West/East Africa networks"},
       {hub:"Direct",note:"UA to JNB (EWR) and ACC (IAD/EWR). Limited but growing."},
@@ -590,17 +591,17 @@ const AIRPORT_MCT = {
   HNL:{mct:90,note:"Home airline hub. AS/HA connections with highest standby priority."},
   NRT:{mct:120,note:"Immigration can be slow. Allow 2+ hrs for intl-intl."},
   HND:{mct:90,note:"Faster than NRT. 30 min monorail to city."},
-  ICN:{mct:120,note:"Large airport. T1T2 transfer adds 30 min."},
+  ICN:{mct:120,note:"Large airport. T1<>T2 transfer adds 30 min."},
   TPE:{mct:120,note:" TSA (Songshan) is 40-60km away — different airport."},
   PVG:{mct:150,note:"Huge airport. Customs slow. SHA (Hongqiao) is 60km away."},
   HKG:{mct:90,note:"Efficient. Good connections."},
   SIN:{mct:90,note:"Excellent hub. Fast connections."},
   BKK:{mct:120,note:"Budget extra for immigration."},
-  MNL:{mct:120,note:"T1T3 are separate buildings — 2+ hr transfer."},
+  MNL:{mct:120,note:"T1<>T3 are separate buildings — 2+ hr transfer."},
   IST:{mct:120,note:"Mega-hub. Excellent connection facility."},
   DOH:{mct:90,note:"Modern hub. Efficient connections."},
   AUH:{mct:90,note:"Modern terminal."},
-  DXB:{mct:120,note:"Very large. T1T3 separate."},
+  DXB:{mct:120,note:"Very large. T1<>T3 separate."},
   LHR:{mct:120,note:"T5 (BA) well-organized. T2 (Star Alliance). Allow for security."},
   FRA:{mct:90,note:"Star Alliance hub. Well-organized."},
   MUC:{mct:90,note:"Compact. Efficient."},
@@ -611,7 +612,7 @@ const AIRPORT_MCT = {
   AMS:{mct:90,note:"Single terminal. Efficient."},
   YVR:{mct:90,note:"Efficient. Good US preclearance."},
   YYZ:{mct:120,note:"Large. T1 (Star Alliance) vs T3."},
-  SYD:{mct:120,note:"DomesticIntl terminals separate."},
+  SYD:{mct:120,note:"Domestic<>Intl terminals separate."},
   NAN:{mct:60,note:"Small, straightforward."},
   GRU:{mct:120,note:"Large. Allow extra time."},
   PTY:{mct:90,note:"Copa hub. Efficient for connections."},
@@ -619,16 +620,16 @@ const AIRPORT_MCT = {
 };
 
 const CROSS_AIRPORT = {
-  "TPETSA":" TPE (Taoyuan) & TSA (Songshan) are 40-60km apart. Budget 4-6 hrs.",
-  "NRTHND":"NRT & HND are 80km apart. Budget 3-4 hrs. Limousine bus ~90 min.",
-  "PVGSHA":"PVG (Pudong) & SHA (Hongqiao) are 60km apart. Budget 3-4 hrs.",
-  "JFKEWR":"JFK & EWR are different airports. Budget 2-3 hrs.",
-  "LHRLGW":"LHR & LGW are 70km apart. Budget 3-4 hrs.",
-  "ORYCDG":"Paris Orly & CDG are 50km apart. Budget 3-4 hrs.",
-  "SYD domesticintl":"Sydney domestic & intl terminals require bus. Budget 1 hr.",
+  "TPE<>TSA":" TPE (Taoyuan) & TSA (Songshan) are 40-60km apart. Budget 4-6 hrs.",
+  "NRT<>HND":"NRT & HND are 80km apart. Budget 3-4 hrs. Limousine bus ~90 min.",
+  "PVG<>SHA":"PVG (Pudong) & SHA (Hongqiao) are 60km apart. Budget 3-4 hrs.",
+  "JFK<>EWR":"JFK & EWR are different airports. Budget 2-3 hrs.",
+  "LHR<>LGW":"LHR & LGW are 70km apart. Budget 3-4 hrs.",
+  "ORY<>CDG":"Paris Orly & CDG are 50km apart. Budget 3-4 hrs.",
+  "SYD domestic<>intl":"Sydney domestic & intl terminals require bus. Budget 1 hr.",
 };
 
-//  City  Airport Lookup 
+//  City <> Airport Lookup 
 const CITY_AIRPORTS = [
   // US Cities
   {city:"San Francisco",country:"US",codes:["SFO","OAK","SJC"]},
@@ -751,7 +752,6 @@ const CITY_AIRPORTS = [
   {city:"Cancún",country:"MX",codes:["CUN"]},
   {city:"San Juan",country:"PR",codes:["SJU"]},
 ];
-
 const US_GATEWAYS = ["SFO","LAX","EWR","IAD","ORD","IAH","DEN","SEA","BOS","JFK","ATL","DFW","MIA","PHX","MSP","DTW","HNL"];
 
 const STORAGE_KEY = "nonrev-planner-v3";
@@ -759,7 +759,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 //  Tier Logic 
 function getRemaining(open, listed) {
-  if (open === null || open === undefined) return null;
+  if (open === null || open === undefined) return null; // no data yet
   if (listed === "" || listed === null || listed === undefined) return null;
   const l = parseInt(listed,10);
   return isNaN(l) ? null : open - l;
@@ -779,7 +779,6 @@ const TIER_META = {
   4:{label:" Unlikely",bg:"#fef2f2",border:"#fca5a5",badge:"#fee2e2",badgeText:"#991b1b",accent:"#dc2626"},
 };
 const ALERT_STYLE = {red:{bg:"#fee2e2",color:"#991b1b",border:"#fca5a5"},amber:{bg:"#fef3c7",color:"#78350f",border:"#fcd34d"},green:{bg:"#d1fae5",color:"#065f46",border:"#86efac"}};
-
 const AC_SIZE={"A380":10,"B777":9,"A350":8,"B787-10":7,"A330":7,"B787-9":6,"B787-8":5,"B767":4,"A321":3,"A320":2,"B737":1,"737":1,"E190":1,"E175":1,"CRJ":0,"ATR":0,"Dash":0,"Q400":0};
 function acScore(ac){if(!ac)return 0;for(const[k,v]of Object.entries(AC_SIZE)){if(ac.includes(k))return v;}return 1;}
 
@@ -809,7 +808,6 @@ function LoginScreen({ onLogin, onSignup }) {
   const [error, setError] = useState("");
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState(false);
-
   const handleSubmit = async () => {
     setError("");
     setLoading(true);
@@ -828,7 +826,6 @@ function LoginScreen({ onLogin, onSignup }) {
     }
     setLoading(false);
   };
-
   return (
     <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:"#f5f4f0",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,padding:"40px 36px",maxWidth:380,width:"100%"}}>
@@ -895,11 +892,9 @@ export default function NonRevPlanner() {
   const trip = curId ? trips[curId] : null;
   const go = (s,id) => { if(id!==undefined) setCurId(id); setScreen(s); };
   const goHome = () => { setCurId(null); setScreen("dashboard"); };
-
   if (authLoading) return <Loading />;
   if (!user) return <LoginScreen onLogin={login} onSignup={signup} />;
   if (!loaded) return <Loading />;
-
   return (
     <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:"#f5f4f0",minHeight:"100vh",color:"#1f2937",overflowX:"hidden"}}>
       <Header screen={screen} goHome={goHome} goRules={()=>setScreen("rules")} onLogout={logout}/>
@@ -1006,16 +1001,13 @@ function NewTrip({onCancel,onCreate}){
   const originDisplay = originCodes.length>0 ? originCodes.join("/") : originText.toUpperCase().slice(0,3);
   const destDisplay = destCodes.length>0 ? destCodes.join("/") : destText;
   const ok = originDisplay.length>=2 && destDisplay.length>=2;
-
   const eligibleTrunk = useMemo(()=>{
     const codes = cabin==="J" ? J_PARTNERS : Y_PARTNERS;
     return [{code:"all",label:"All airlines"},...codes.map(c=>({code:c,label:`${c} — ${AGREEMENTS[c]?.name||c}${AGREEMENTS[c]?.home?"  HOME":""}${AGREEMENTS[c]?.alliance?` (${AGREEMENTS[c].alliance})`:""}`}))];
   },[cabin]);
-
   useEffect(()=>{
     if(trunkAirline!=="all" && !eligibleTrunk.find(e=>e.code===trunkAirline)) setTrunkAirline("all");
   },[cabin]);
-
   return(
     <div style={{maxWidth:560,margin:"0 auto"}}>
       <h2 style={{fontSize:22,fontWeight:800,color:"#111827",marginBottom:4}}>New Trip</h2>
@@ -1193,8 +1185,7 @@ function Research({trip,onDone,onSkip}){
     const originCode = (trip.originCodes && trip.originCodes.length > 0) ? trip.originCodes.join(',') : trip.origin.toUpperCase();
     const searchCode = (trip.destCodes && trip.destCodes.length > 0) ? trip.destCodes.join(',') : trip.destination.toUpperCase();
     const originStr = originCode.split(",").join("/");
-    addLog(`Researching ${originStr}  ${trip.destination}…`);
-
+    addLog(`Researching ${originStr} -> ${trip.destination}…`);
     const searchTexts = [
       (trip.destination||"").toLowerCase() + " " + ((trip.destCodes||[]).join(" ")).toLowerCase(),
       (trip.origin||"").toLowerCase() + " " + ((trip.originCodes||[]).join(" ")).toLowerCase(),
@@ -1203,7 +1194,8 @@ function Research({trip,onDone,onSkip}){
     for(const searchText of searchTexts){
       for(const[region,data] of Object.entries(REGIONS)){
         if(data.destinations.some(a=>searchText.includes(a.toLowerCase()))||data.keywords.some(k=>searchText.includes(k))){
-          matchedRegion=region; matchedData=data; break;
+          matchedRegion=region;
+          matchedData=data; break;
         }
       }
       if(matchedRegion) break;
@@ -1262,7 +1254,6 @@ function Research({trip,onDone,onSkip}){
     }
     addLog(`Trunk carriers (${cabinJ?"J":"Y"}): ${trunkCarriers.join(", ")}${!trunkFilter?" — AS/HA = HOME priority":""}`);
     addLog(`Connection carriers: ${connCarriers.join(", ")}`);
-
     addLog("Initiating Claude Research (Priority 1)...");
 
     try {
@@ -1276,16 +1267,25 @@ function Research({trip,onDone,onSkip}){
       });
       addLog("Database reset. Triggering fresh research...");
 
+      // DYNAMIC PROMPT (V1.2 Upgrade: Unbiased & Dynamic)
+      const prompt = `You are a travel assistant routing non-rev standby flights.
+      RULES:
+      1. ORIGIN: Depart from ${originCode.split(",").join(" or ")}.
+      2. DESTINATION: Fly to ${searchCode.split(",").join(" or ")}.
+      3. PRIORITIES: Find the best routes based on shortest total travel time and widebody aircraft capacity. Do not hardcode preferences for any specific airline unless explicitly filtered by the data.`;
+
       const response = await fetch("/.netlify/functions/research-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          prompt: "Analyze routes",
+          prompt: prompt,
           userId: "anthony_alonso",
           origin: originCode,
           finalDestination: searchCode,
           hubs: dynamicHubs,
-          date: trip.travelDate
+          date: trip.travelDate,
+          trunkFilter: trip.trunkAirline === "all" ? null : trip.trunkAirline, // <--- THE FIX
+          cabin: trip.cabin
         })
       });
 
@@ -1335,7 +1335,7 @@ function Research({trip,onDone,onSkip}){
                     note: f.notes || ""
                   });
                 });
-                
+
                 (parsed.hub_routes || []).forEach(hr => {
                   const trunk = hr.trunk_flight || hr;
                   const trunkCode = trunk.airline || hr.airline || "??";
@@ -1346,7 +1346,7 @@ function Research({trip,onDone,onSkip}){
                     const cp = AGREEMENTS[c.airline];
                     return {
                       id: `c-${uid()}`,
-                      conn: `${cp?.name || c.airline} ${c.flight_number}  ${c.destination}`,
+                      conn: `${cp?.name || c.airline} ${c.flight_number} -> ${c.destination}`,
                       fn: c.flight_number, cd: c.departure_time, ac: c.aircraft, at: c.arrival_time,
                       cDepDate: c.departure_date, cArrDate: c.arrival_date, cOrigin: c.origin,
                       apt: c.destination, airlineCode: c.airline, layoverHrs: c.layover_hrs, 
@@ -1411,7 +1411,7 @@ function Research({trip,onDone,onSkip}){
             <div style={{display:"inline-block",width:48,height:48,border:"3px solid #e5e7eb",borderTopColor:"#2563eb",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
           </div>
           <div style={{fontSize:18,fontWeight:800,color:"#111827",marginBottom:6}}>
-            {trip.origin}  {trip.destination}
+            {trip.origin} {"->"} {trip.destination}
           </div>
           <div style={{fontSize:13,color:"#475569",marginBottom:16}}>
             {status==="parsing" ? "Parsing flight data…" : "Searching across partner airlines…"}
@@ -1445,7 +1445,6 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
   const [editDate,setEditDate]=useState(trip.travelDate||"");
   const [editCabin,setEditCabin]=useState(trip.cabin||"J");
   const [editTravelers,setEditTravelers]=useState(String(trip.travelers||1));
-
   const [arDirect,setArDirect]=useState(true);
   const [arAirline,setArAirline]=useState("UA");
   const [arFlight,setArFlight]=useState("");
@@ -1483,7 +1482,7 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
       note:(arDirect?"Direct":"Via "+arHub)+" — manually added",
       cabinAvail:p?.j?"J":"Y",isHome:p?.home||false,
       connections:arDirect?[{id:`c-${uid()}`,conn:`DIRECT to ${arDest||trip.destination}`,fn:"—",cd:"—",ac:arAc||"Unknown",at:arArr,apt:arDest||trip.destination,el:!!p,elL:p?.how||"Check",ov:false,airlineCode:code,cabinAvail:p?.j?"J":"Y"}]
-        :(arConnAirline?[{id:`c-${uid()}`,conn:`${AGREEMENTS[arConnAirline]?.name||arConnAirline} ${arConnFlight}  ${arConnDest||trip.destination}`,fn:`${arConnAirline} ${arConnFlight}`,cd:arConnDep,ac:arConnAc||"Unknown",at:arConnArr,apt:arConnDest||trip.destination,el:!!AGREEMENTS[arConnAirline],elL:AGREEMENTS[arConnAirline]?.how||"Check",ov:false,airlineCode:arConnAirline,cabinAvail:AGREEMENTS[arConnAirline]?.j?"J":"Y"}]:[])};
+        :(arConnAirline?[{id:`c-${uid()}`,conn:`${AGREEMENTS[arConnAirline]?.name||arConnAirline} ${arConnFlight} -> ${arConnDest||trip.destination}`,fn:`${arConnAirline} ${arConnFlight}`,cd:arConnDep,ac:arConnAc||"Unknown",at:arConnArr,apt:arConnDest||trip.destination,el:!!AGREEMENTS[arConnAirline],elL:AGREEMENTS[arConnAirline]?.how||"Check",ov:false,airlineCode:arConnAirline,cabinAvail:AGREEMENTS[arConnAirline]?.j?"J":"Y"}]:[])};
     await onUpdate({routes:[...routes,nr]});
     setAddingRoute(false);setArFlight("");setArDep("");setArArr("");setArAc("");setArDest("");setArHub("");
     setArConnAirline("");setArConnFlight("");setArConnDep("");setArConnArr("");setArConnAc("");setArConnDest("");
@@ -1537,7 +1536,7 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
             {trip.travelDate||"Flex"}{trip.flexDays>0?` (±${trip.flexDays}d)`:""} · {trip.cabin==="J"?"Business":"Economy"} · {trip.travelers} pax{trip.trunkAirline?` · Trunk: ${AGREEMENTS[trip.trunkAirline]?.name||trip.trunkAirline} only`:""}
             {daysUntil!==null&&<span style={{marginLeft:8,fontWeight:700,color:daysUntil<=3?"#dc2626":daysUntil<=7?"#d97706":"#059669"}}>{daysUntil<=0?"TODAY / PAST":`${daysUntil}d away`}</span>}
           </div>
-          <h2 style={{fontSize:24,fontWeight:900,color:"#111827",margin:"0 0 2px"}}>{trip.origin}  {trip.destination}</h2>
+          <h2 style={{fontSize:24,fontWeight:900,color:"#111827",margin:"0 0 2px"}}>{trip.origin} {"->"} {trip.destination}</h2>
           <p style={{fontSize:12,color:"#64748b",margin:0}}>{trip.name}</p>
         </>)}
       </div>
@@ -1595,7 +1594,7 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
                 {r.isHome&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:99,background:"#d1fae5",color:"#065f46",fontWeight:700}}>HOME </span>}
               </div>
               <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:2}}>{r.fullFlightNum}</div>
-              <div style={{fontSize:10,color:"#475569"}}>{a?.name||r.trunkCarrier} · {r.origin || trip.origin.slice(0,3).toUpperCase()}{r.hub}{r.isDirect&&<span style={{marginLeft:4,fontSize:9,background:"#111827",color:"#fff",padding:"0 5px",borderRadius:99,fontWeight:700}}>DIRECT</span>}</div>
+              <div style={{fontSize:10,color:"#475569"}}>{a?.name||r.trunkCarrier} · {r.origin || trip.origin.slice(0,3).toUpperCase()}{"->"}{r.hub}{r.isDirect&&<span style={{marginLeft:4,fontSize:9,background:"#111827",color:"#fff",padding:"0 5px",borderRadius:99,fontWeight:700}}>DIRECT</span>}</div>
               <div style={{fontSize:13,fontWeight:900,color:remColor(r.remaining),marginTop:4}}>{r.open===null?"Enter seats ":r.remaining!==null?`${r.remaining} remaining`:`${r.open} open`}</div>
             </div>);})}
         </div>
@@ -1641,10 +1640,10 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
                   </div>
 
                   <div style={{fontSize:11,color:"#4b5563"}}>
-                    <strong style={{color:"#111827"}}>{r.origin || trip.origin.slice(0,3).toUpperCase()}</strong>  <strong style={{color:"#111827"}}>{r.hub || r.destination}</strong> · 
+                    <strong style={{color:"#111827"}}>{r.origin || trip.origin.slice(0,3).toUpperCase()}</strong> {"->"} <strong style={{color:"#111827"}}>{r.hub || r.destination}</strong> ·
                     Dep <span style={{fontFamily:"monospace",color:"#374151",fontWeight:600}}>{r.depDate ? `${r.depDate.slice(5)} ` : ""}{r.sfoDep || r.departure_time}</span> · 
                     Arr <span style={{fontFamily:"monospace",color:"#374151",fontWeight:600}}>{r.arrDate ? `${r.arrDate.slice(5)} ` : ""}{r.hubArr || r.arrival_time}</span>
-                    {r.durationHrs && <span style={{marginLeft:8, padding: "2px 6px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 700}}>⏱ {r.durationHrs}h total</span>}
+                    {r.durationHrs > 0 && <span style={{marginLeft:8, padding: "2px 6px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 700}}> {r.durationHrs}h total</span>}
                   </div>
 
                   {warnings.length > 0 && (
@@ -1671,12 +1670,10 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
               <div style={{background:"#fff",border:`1.5px solid ${tm.border}`,borderRadius:10,padding:"12px 14px",width:"100%",boxSizing:"border-box"}}>
                 <div style={{display:"flex",gap:8,marginBottom:8}}>
                   <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",marginBottom:4,fontFamily:"monospace"}}>{trip.cabin==="J"?"Open J":"Open Y"}</div>
-                    <input type="number" min="0" max="99" value={ud[r.id]?.openSeats??""} placeholder="?"
-                      onChange={e=>sf(r.id,"openSeats",e.target.value)} style={{width:"100%",fontSize:20,fontWeight:900,textAlign:"center",background:"transparent",border:"none",borderBottom:`2px solid ${tm.border}`,outline:"none",color:r.open!==null?remColor(r.remaining):"#1e293b",fontFamily:"inherit",padding:"0 0 2px"}}/></div>
+                    <input type="number" min="0" max="99" value={ud[r.id]?.openSeats??""} placeholder="?" onChange={e=>sf(r.id,"openSeats",e.target.value)} style={{width:"100%",fontSize:20,fontWeight:900,textAlign:"center",background:"transparent",border:"none",borderBottom:`2px solid ${tm.border}`,outline:"none",color:r.open!==null?remColor(r.remaining):"#1e293b",fontFamily:"inherit",padding:"0 0 2px"}}/></div>
                   <div style={{paddingTop:18,color:"#d1d5db"}}></div>
                   <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",marginBottom:4,fontFamily:"monospace"}}>Listed</div>
-                    <input type="number" min="0" max="99" value={r.listed} onChange={e=>sf(r.id,"listedStandby",e.target.value)} placeholder="?"
-                      style={{width:"100%",fontSize:20,fontWeight:900,textAlign:"center",background:"transparent",border:"none",borderBottom:"2px solid #d4d4d8",outline:"none",color:"#1e293b",fontFamily:"inherit",padding:"0 0 2px"}}/></div>
+                    <input type="number" min="0" max="99" value={r.listed} onChange={e=>sf(r.id,"listedStandby",e.target.value)} placeholder="?" style={{width:"100%",fontSize:20,fontWeight:900,textAlign:"center",background:"transparent",border:"none",borderBottom:"2px solid #d4d4d8",outline:"none",color:"#1e293b",fontFamily:"inherit",padding:"0 0 2px"}}/></div>
                   <div style={{paddingTop:18,color:"#d1d5db"}}>=</div>
                   <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:9,fontWeight:700,color:"#64748b",textTransform:"uppercase",marginBottom:4,fontFamily:"monospace"}}>Left</div>
                     <div style={{fontSize:20,fontWeight:900,color:remColor(r.remaining),minHeight:28,display:"flex",alignItems:"center",justifyContent:"center"}}>{r.remaining!==null?r.remaining:"?"}</div></div>
@@ -1704,14 +1701,14 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
                     {sortConnections(r.connections).map((c,ci)=>{const cu=ud[c.id]||{};const ar=AGREEMENTS[c.airlineCode];const isExp=!!exp[c.id];
                       return(<>
                         <tr key={c.id} style={{background:ci%2===0?"#fff":"#f9fafb",borderBottom:isExp?"none":"1px solid #f0f0f0"}}>
-                          <td style={{padding:"8px 10px",fontWeight:500,color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.conn}{c.layoverHrs&&<span style={{marginLeft:4,fontSize:9,color:"#64748b"}}>({c.layoverHrs}h)</span>}</td>
+                          <td style={{padding:"8px 10px",fontWeight:500,color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.conn}{c.layoverHrs > 0 && <span style={{marginLeft:4,fontSize:9,color:"#64748b"}}>({c.layoverHrs}h)</span>}</td>
                           <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569"}}>{c.fn}</td>
                           <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569",whiteSpace:"nowrap"}}>{c.cDepDate ? `${c.cDepDate.slice(5)} ` : ""}{c.cd}</td>
                           <td style={{padding:"8px 10px",color:"#64748b"}}>{c.ac}</td>
                           <td style={{padding:"8px 10px",fontWeight:700,color:"#2563eb",whiteSpace:"nowrap"}}>{c.cArrDate ? `${c.cArrDate.slice(5)} ` : ""}{c.at}</td>
                           <td style={{padding:"8px 10px",fontFamily:"monospace",color:"#475569"}}>{c.apt}</td>
                           <td style={{padding:"8px 10px"}}><span style={{fontSize:9,padding:"1px 5px",borderRadius:99,background:c.cabinAvail==="J"?"#fef3c7":"#f3f4f6",color:c.cabinAvail==="J"?"#92400e":"#475569",fontWeight:600}}>{c.cabinAvail==="J"?"J":"Y"}</span></td>
-                          <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{c.el ? <span style={{color:"#059669",fontWeight:800}}>✓ ZED</span> : <span style={{color:"#64748b",fontWeight:600}}>Cash Tkt</span>}</td>
+                          <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{c.el ? <span style={{color:"#059669",fontWeight:800}}> ZED</span> : <span style={{color:"#64748b",fontWeight:600}}>Cash Tkt</span>}</td>
                           <td style={{padding:"8px 10px"}}>{ar&&<Btn onClick={()=>setExp(p=>({...p,[c.id]:!p[c.id]}))} dim>Rules</Btn>}</td>
                           <td style={{padding:"8px 10px",minWidth:100}}><input value={cu.ticket||""} onChange={e=>sf(c.id,"ticket",e.target.value)} placeholder="Conf#" style={{width:"100%",fontSize:10,border:"none",borderBottom:"1px solid #e5e7eb",background:"transparent",outline:"none",color:"#1e293b",padding:"2px 0"}}/></td>
                           <td style={{padding:"8px 10px",minWidth:120}}><input value={cu.notes||""} onChange={e=>sf(c.id,"notes",e.target.value)} placeholder="Notes…" style={{width:"100%",fontSize:10,border:"none",borderBottom:"1px solid #e5e7eb",background:"transparent",outline:"none",color:"#1e293b",padding:"2px 0"}}/></td>

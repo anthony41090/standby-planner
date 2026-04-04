@@ -32,6 +32,7 @@ exports.handler = async (event) => {
 
     console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr}`);
 
+    // API-Level Filters
     let trunkAirlineQuery = "&stops=1";
     if (trunkFilter) {
       trunkAirlineQuery += `&airlines=${trunkFilter.trim().toUpperCase()}`;
@@ -47,7 +48,9 @@ exports.handler = async (event) => {
 
       let connectionDate = date; 
       const longHaulRegions = ['NRT', 'HND', 'ICN', 'TPE', 'HKG', 'LHR', 'FRA', 'CDG', 'AMS', 'SYD', 'AKL', 'SIN', 'PEK', 'PKX', 'PVG', 'BKK', 'DXB', 'KIX'];
-      if (longHaulRegions.some(code => cleanFinalStr.includes(code)) || chunk.some(h => longHaulRegions.includes(h))) {
+      const isLongHaul = longHaulRegions.some(code => cleanFinalStr.includes(code)) || chunk.some(h => longHaulRegions.includes(h));
+
+      if (isLongHaul) {
         const nextDay = new Date(date);
         nextDay.setDate(nextDay.getDate() + 1);
         connectionDate = nextDay.toISOString().split('T')[0];
@@ -68,7 +71,9 @@ exports.handler = async (event) => {
           const tRes = await fetch(trunkUrl);
           tData = await tRes.json();
         }
-      } catch (err) { console.error(`Fetch Error:`, err.message); }
+      } catch (err) {
+        console.error(`Batch Fetch Error for chunk [${cleanHubStr}]:`, err.message);
+      }
       return { tData, cData };
     });
 
@@ -76,11 +81,15 @@ exports.handler = async (event) => {
       try {
         const directUrl = `https://serpapi.com/search.json?engine=google_flights&departure_id=${origin}&arrival_id=${cleanFinalStr}&outbound_date=${date}&type=2${trunkAirlineQuery}&api_key=${serpKey}`;
         const res = await fetch(directUrl);
-        return { tData: await res.json(), cData: { best_flights: [], other_flights: [] } };
-      } catch (err) { return { tData: { best_flights: [], other_flights: [] }, cData: { best_flights: [], other_flights: [] } }; }
+        const tData = await res.json();
+        return { tData, cData: { best_flights: [], other_flights: [] } };
+      } catch (err) {
+        return { tData: { best_flights: [], other_flights: [] }, cData: { best_flights: [], other_flights: [] } };
+      }
     };
     
     fetchPromises.push(directPromise());
+
     const results = await Promise.all(fetchPromises);
     results.forEach(res => {
       if (res.tData.best_flights) trunkData.best_flights.push(...res.tData.best_flights);
@@ -89,25 +98,37 @@ exports.handler = async (event) => {
       if (res.cData.other_flights) connData.other_flights.push(...res.cData.other_flights);
     });
 
-    // 3. MINIMIZE AND DEDUPE
+    // 3. STRICT FILTERING & DEDUPLICATION 
+    const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
+    const allSearchTargets = [...new Set([...destArray, ...filteredHubs])];
+
+    const AIRLINE_NAMES = {
+      "UA": "UNITED", "AA": "AMERICAN", "DL": "DELTA", "AS": "ALASKA", "HA": "HAWAIIAN"
+    };
+
     const splitDateTime = (timeStr) => {
       if (!timeStr) return { date: "", time: "" };
       const parts = timeStr.split(' ');
       return { date: parts[0] || "", time: parts[1] || timeStr };
     };
 
+    // V1.2 Upgrade: Pre-calculate durations in JS to save Claude's memory
     const minimizeFlight = (f) => {
       const leg = f.flights?.[0] || f;
       const depData = splitDateTime(leg.departure_airport?.time || f.departure_airport?.time);
       const arrData = splitDateTime(leg.arrival_airport?.time || f.arrival_airport?.time);
+      const durMins = f.total_duration || leg.duration || 0;
+
       return {
         airline: leg.airline || f.airline || "",
         flight_number: leg.flight_number || f.flight_number || "",
         origin: (leg.departure_airport?.id || f.departure_airport?.id || "").toUpperCase(),
         dest: (leg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
-        dep_date: depData.date, dep_time: depData.time,
-        arr_date: arrData.date, arr_time: arrData.time,
-        duration_hrs: Math.round((f.total_duration || leg.duration || 0) / 6) / 10,
+        dep_date: depData.date,
+        dep_time: depData.time,
+        arr_date: arrData.date,
+        arr_time: arrData.time,
+        duration_hrs: Math.round(durMins / 6) / 10, 
         aircraft: leg.airplane || f.airplane || "Unknown"
       };
     };
@@ -122,119 +143,164 @@ exports.handler = async (event) => {
       });
     };
 
-    const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
-    const rawTrunk = dedupeFlights([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])].map(minimizeFlight))
-      .filter(f => allowedOrigins.includes(f.origin));
+    // V1.1 Magic: Ensures trunkFilter works perfectly!
+    const filterAndMinimizeTrunk = (flights) => {
+      return (flights || [])
+        .filter(f => !f.flights || f.flights.length === 1)
+        .map(minimizeFlight)
+        .filter(f => {
+          if (!f.origin || !allowedOrigins.includes(f.origin)) return false;
+          if (!f.dest || !allSearchTargets.includes(f.dest)) return false;
+          
+          if (trunkFilter) {
+            const filterCode = trunkFilter.trim().toUpperCase();
+            const filterName = AIRLINE_NAMES[filterCode] || filterCode;
+            const airlineUpper = f.airline.toUpperCase();
+            const flightNumUpper = f.flight_number.toUpperCase();
 
-    const directFlightsArray = rawTrunk.filter(f => destArray.includes(f.dest)).slice(0, 15);
-    const hubFlightsArray = rawTrunk.filter(f => !destArray.includes(f.dest)).slice(0, 40);
-    const connFlightsRaw = dedupeFlights([...(connData.best_flights || []), ...(connData.other_flights || [])].map(minimizeFlight));
+            if (!airlineUpper.includes(filterName) && !airlineUpper.includes(filterCode) && !flightNumUpper.includes(filterCode)) {
+              return false;
+            }
+          }
+          return true;
+        });
+    };
 
-    // 3.5 PRE-CALCULATE ALL STANDBY LOGIC (OFFLOAD MATH FROM CLAUDE)
-    const processedHubRoutes = [];
-    const viableHubs = [...new Set(hubFlightsArray.map(h => h.dest))].slice(0, 8);
+    const filterAndMinimizeConnections = (flights) => {
+      return (flights || [])
+        .filter(f => !f.flights || f.flights.length === 1) 
+        .map(minimizeFlight);
+    };
 
-    viableHubs.forEach(hubCode => {
-      const trunk = hubFlightsArray.find(h => h.dest === hubCode);
-      if (!trunk) return;
+    const sortByDuration = (a, b) => {
+      return (a.duration_hrs || 99) - (b.duration_hrs || 99);
+    };
 
-      const connections = connFlightsRaw.filter(c => {
-        if (c.origin !== hubCode) return false;
-        const arrival = new Date(`${trunk.arr_date}T${trunk.arr_time}`);
+    const rawTrunkCleaned = dedupeFlights(filterAndMinimizeTrunk([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])])).sort(sortByDuration);
+
+    // V1.2 SCALABILITY SAFETY: Slice arrays so we never crash Claude if trunkFilter is 'all'
+    const directFlightsArray = rawTrunkCleaned.filter(f => destArray.includes(f.dest)).slice(0, 20);
+    const hubFlightsArray = rawTrunkCleaned.filter(f => !destArray.includes(f.dest)).slice(0, 60);
+    const connFlightsArray = dedupeFlights(filterAndMinimizeConnections([...(connData.best_flights || []), ...(connData.other_flights || [])])).sort(sortByDuration);
+
+    // V1.2 Lightweight Pre-Filter: Remove time-traveling flights and cap at 150
+    const optimizedConnections = connFlightsArray.filter(c => {
+      return hubFlightsArray.some(h => {
+        if (h.dest !== c.origin) return false;
+        const arrival = new Date(`${h.arr_date}T${h.arr_time}`);
         const departure = new Date(`${c.dep_date}T${c.dep_time}`);
         const layoverMins = (departure - arrival) / 60000;
         return layoverMins >= 60 && layoverMins <= 1440; 
-      }).map(c => {
-        const arrival = new Date(`${trunk.arr_date}T${trunk.arr_time}`);
-        const departure = new Date(`${c.dep_date}T${c.dep_time}`);
-        return {
-          ...c,
-          lh: Math.round((departure - arrival) / 60000 / 6) / 10,
-          tdh: Math.round((trunk.duration_hrs + c.duration_hrs + ((departure - arrival) / 3600000)) * 10) / 10
-        };
-      }).slice(0, 4);
-
-      if (connections.length > 0) {
-        processedHubRoutes.push({ hubCode, trunk, connections });
-      }
+      });
     });
 
-    const liveFlights = { direct_flights: directFlightsArray, hub_routes: processedHubRoutes };
+    const liveFlights = {
+      direct_flights: directFlightsArray,
+      hub_flights: hubFlightsArray,
+      connections_from_hubs: optimizedConnections.slice(0, 150)
+    };
 
-    if (directFlightsArray.length === 0 && processedHubRoutes.length === 0) {
-      await setDoc(doc(db, "research", userId), { results: JSON.stringify({ direct_flights: [], hub_routes: [] }), status: "complete" });
+    console.log(`DEBUG: Found ${directFlightsArray.length} Direct Flights and ${hubFlightsArray.length} Hub Flights.`);
+
+    if (directFlightsArray.length === 0 && hubFlightsArray.length === 0) {
+      console.log("CIRCUIT BREAKER: 0 flights found.");
+      await setDoc(doc(db, "research", userId), { results: JSON.stringify({ direct_flights: [], hub_routes: [] }), timestamp: new Date().toISOString(), status: "complete" });
       return; 
     }
 
-    // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT
+    // 4. THE HYBRID PROMPT (Dynamic Rules + v1.2 Schema/Timeout Protection)
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
     =========================================
-    FACTUAL FLIGHT DATA (NO MATH REQUIRED):
+    CLEAN LIVE DATA: ${origin} ➔ ${cleanFinalStr}
     =========================================
     ${JSON.stringify(liveFlights)}
     
-    CRITICAL BEHAVIORAL RULES:
-    1. ZERO HALLUCINATIONS: Use ONLY the provided flight numbers from the data above.
-    2. HUB STRATEGY: Limit results to the TOP 8 HUB ROUTES from the data. 
-    3. CONNECTION LIMIT: For each hub, list a MAXIMUM of 4 connection options.
-    4. ACTIONABLE ADVICE: Write standby strategy notes for 'n', 'h_n', and 'ln'. Keep them under 15 words. ONLY include a note if it provides value (e.g. 'Tight connection', 'High capacity aircraft'). Otherwise leave empty "".
-    5. DATA INTEGRITY: Do not calculate anything. Use provided dh/tdh/lh values exactly.
-    6. MINIFIED SCHEMA: Use these exact keys. Use single quotes (') for text; NEVER use double quotes (") inside values.
+    CRITICAL DATA INTEGRITY & EXTRACTION RULES:
+    1. ZERO TOLERANCE FOR HALLUCINATIONS: You are strictly forbidden from inventing flights. Every flight number MUST be a direct copy-paste from the CLEAN LIVE DATA.
+    2. MANDATORY DIRECT FLIGHTS: You MUST list every flight found in the "direct_flights" array. Do not omit them.
+    3. HUB MAPPING: Use the "hub_flights" and "connections_from_hubs" arrays. Limit to a MAXIMUM of 8 HUB ROUTES. List a MAXIMUM of 4 connections per hub. 
+       - CRITICAL MAP RULE: The trunk flight's destination MUST EXACTLY MATCH the hub_code.
+    4. NON-STANDBY ALERTS: Airlines such as ${nonStandbyAirlines.join(', ')} are NOT standby eligible. Add a note: ⚠️ [Airline Name] is not standby eligible.
+    5. NON-REV OPTIMIZATION & WARNINGS: Prioritize shortest total durations. Calculate 'tdh' (total duration hrs). Set 'ov' (overnight layover) and 'ac' (airport change) booleans.
+    6. BREVITY: Keep all notes ('n', 'h_n', 'ln') highly actionable but UNDER 15 WORDS. If no specific advice is needed, output "".
+    7. MINIFIED SCHEMA: To prevent timeouts, use these exact short keys. Use single quotes (') for text; NEVER double quotes (") inside values.
 
     {
-      "df": [{ "al": "UA", "fn": "UA 837", "dd": "2026-04-10", "dt": "11:40", "ad": "2026-04-11", "at": "15:00", "air": "777", "or": "SFO", "de": "NRT", "dh": 11, "n": "Note." }],
-      "hr": [{
-        "hc": "ICN", "hn": "Seoul", "ov": true, "ac": false, "tdh": 24.5,
-        "tf": { "al": "UA", "fn": "UA 893", "dd": "2026-04-10", "dt": "10:30", "ad": "2026-04-11", "at": "15:30", "air": "777", "de": "ICN", "or": "SFO" },
-        "cx": [{ "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 26.5, "ln": "" }],
-        "h_n": "Advice."
-      }]
+      "df": [
+        { "al": "UA", "fn": "UA 837", "dd": "2026-04-10", "dt": "11:40", "ad": "2026-04-11", "at": "15:00", "air": "777", "or": "SFO", "de": "NRT", "dh": 11.5, "n": "Direct service." }
+      ],
+      "hr": [
+        {
+          "hc": "ICN",
+          "hn": "Seoul",
+          "ov": true,
+          "ac": false,
+          "tdh": 24.5,
+          "tf": { "al": "UA", "fn": "UA 893", "dd": "2026-04-10", "dt": "10:30", "ad": "2026-04-11", "at": "15:30", "air": "777", "de": "ICN", "or": "SFO" },
+          "cx": [
+            { "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 3, "ln": "Connect via Seoul." }
+          ],
+          "h_n": "Overnight required."
+        }
+      ]
     }`;
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2023-06-01" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": claudeKey,
+        "anthropic-version": "2023-06-01"
+      },
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
-        max_tokens: 8192,
+        max_tokens: 4000,
         messages: [{ role: "user", content: enhancedPrompt }]
       })
     });
 
     const claudeData = await claudeResponse.json();
-    if (claudeData.error) throw new Error(`Claude API: ${claudeData.error.message}`);
     
+    if (claudeData.error) throw new Error(`Claude API: ${claudeData.error.message}`);
+    if (!claudeData.content?.[0]) throw new Error("Claude Data Missing");
+
+    // 5. EXPAND MINIFIED JSON BACK TO FULL VERBOSE FORMAT FOR FRONTEND
     let rawJsonText = claudeData.content[0].text;
     const jsonMatch = rawJsonText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON found");
+    if (!jsonMatch) throw new Error("No JSON found in Claude response");
+    
     const minData = JSON.parse(jsonMatch[0]);
     
-    // 5. EXPAND FOR FRONTEND COMPATIBILITY
     const expandedData = {
       direct_flights: (minData.df || []).map(f => ({
         airline: f.al, flight_number: f.fn, departure_date: f.dd, departure_time: f.dt,
         arrival_date: f.ad, arrival_time: f.at, aircraft: f.air, origin: f.or, destination: f.de,
-        duration_hrs: f.dh, notes: f.n
+        duration_hrs: f.dh || 0, notes: f.n
       })),
       hub_routes: (minData.hr || []).map(h => ({
         hub_code: h.hc, hub_name: h.hn, overnight_layover: !!h.ov, airport_change: !!h.ac,
-        total_duration_hrs: h.tdh, hub_notes: h.h_n,
+        total_duration_hrs: h.tdh || 0, hub_notes: h.h_n,
         trunk_flight: h.tf ? {
           airline: h.tf.al, flight_number: h.tf.fn, departure_date: h.tf.dd, departure_time: h.tf.dt,
-          arrival_date: h.tf.ad, arrival_time: h.tf.at, aircraft: h.tf.air, destination: h.tf.de, origin: h.tf.or
+          arrival_date: h.tf.ad, arrival_time: h.tf.at, aircraft: h.tf.air, destination: h.tf.de, origin: h.tf.or || origin.split(',')[0]
         } : {},
         connections: (h.cx || []).map(c => ({
           airline: c.al, flight_number: c.fn, origin: c.or, destination: c.de,
           departure_date: c.dd, departure_time: c.dt, arrival_date: c.ad, arrival_time: c.at,
-          layover_hrs: c.lh, layover_note: c.ln
+          layover_hrs: c.lh || 0, layover_note: c.ln
         }))
       }))
     };
 
-    await setDoc(doc(db, "research", userId), { results: JSON.stringify(expandedData), timestamp: new Date().toISOString(), status: "complete" });
-    console.log("SUCCESS: Expanded results pushed.");
+    await setDoc(doc(db, "research", userId), {
+      results: JSON.stringify(expandedData),
+      timestamp: new Date().toISOString(),
+      status: "complete"
+    });
+
+    console.log("SUCCESS: Results expanded and pushed to Firebase.");
 
   } catch (error) {
     console.error("Error:", error.message);
