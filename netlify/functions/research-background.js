@@ -30,7 +30,7 @@ exports.handler = async (event) => {
     }
     if (hubChunks.length === 0) hubChunks.push([]); 
 
-    console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr} (Running in ${hubChunks.length + 1} parallel batches)`);
+    console.log(`Double-Hop Research: ${origin} -> [${filteredHubs.join(',')}] -> ${cleanFinalStr}`);
 
     let trunkAirlineQuery = "&stops=1";
     if (trunkFilter) {
@@ -47,9 +47,7 @@ exports.handler = async (event) => {
 
       let connectionDate = date; 
       const longHaulRegions = ['NRT', 'HND', 'ICN', 'TPE', 'HKG', 'LHR', 'FRA', 'CDG', 'AMS', 'SYD', 'AKL', 'SIN', 'PEK', 'PKX', 'PVG', 'BKK', 'DXB', 'KIX'];
-      const isLongHaul = longHaulRegions.some(code => cleanFinalStr.includes(code)) || chunk.some(h => longHaulRegions.includes(h));
-
-      if (isLongHaul) {
+      if (longHaulRegions.some(code => cleanFinalStr.includes(code)) || chunk.some(h => longHaulRegions.includes(h))) {
         const nextDay = new Date(date);
         nextDay.setDate(nextDay.getDate() + 1);
         connectionDate = nextDay.toISOString().split('T')[0];
@@ -70,9 +68,7 @@ exports.handler = async (event) => {
           const tRes = await fetch(trunkUrl);
           tData = await tRes.json();
         }
-      } catch (err) {
-        console.error(`Batch Fetch Error:`, err.message);
-      }
+      } catch (err) { console.error(`Fetch Error:`, err.message); }
       return { tData, cData };
     });
 
@@ -93,10 +89,7 @@ exports.handler = async (event) => {
       if (res.cData.other_flights) connData.other_flights.push(...res.cData.other_flights);
     });
 
-    // 3. STRICT FILTERING & DEDUPLICATION
-    const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
-    const allSearchTargets = [...new Set([...destArray, ...filteredHubs])];
-
+    // 3. MINIMIZE AND DEDUPE
     const splitDateTime = (timeStr) => {
       if (!timeStr) return { date: "", time: "" };
       const parts = timeStr.split(' ');
@@ -114,7 +107,7 @@ exports.handler = async (event) => {
         dest: (leg.arrival_airport?.id || f.arrival_airport?.id || "").toUpperCase(),
         dep_date: depData.date, dep_time: depData.time,
         arr_date: arrData.date, arr_time: arrData.time,
-        duration_mins: f.total_duration || leg.duration || 0,
+        duration_hrs: Math.round((f.total_duration || leg.duration || 0) / 6) / 10,
         aircraft: leg.airplane || f.airplane || "Unknown"
       };
     };
@@ -129,55 +122,74 @@ exports.handler = async (event) => {
       });
     };
 
+    const allowedOrigins = origin.split(',').map(o => o.trim().toUpperCase());
     const rawTrunk = dedupeFlights([...(trunkData.best_flights || []), ...(trunkData.other_flights || [])].map(minimizeFlight))
-      .filter(f => allowedOrigins.includes(f.origin) && allSearchTargets.includes(f.dest));
+      .filter(f => allowedOrigins.includes(f.origin));
 
     const directFlightsArray = rawTrunk.filter(f => destArray.includes(f.dest)).slice(0, 15);
     const hubFlightsArray = rawTrunk.filter(f => !destArray.includes(f.dest)).slice(0, 40);
     const connFlightsRaw = dedupeFlights([...(connData.best_flights || []), ...(connData.other_flights || [])].map(minimizeFlight));
 
-    const optimizedConnections = connFlightsRaw.filter(c => {
-      return hubFlightsArray.some(h => {
-        if (h.dest !== c.origin) return false;
-        const arrival = new Date(`${h.arr_date}T${h.arr_time}`);
+    // 3.5 PRE-CALCULATE ALL STANDBY LOGIC (OFFLOAD MATH FROM CLAUDE)
+    const processedHubRoutes = [];
+    const viableHubs = [...new Set(hubFlightsArray.map(h => h.dest))].slice(0, 8);
+
+    viableHubs.forEach(hubCode => {
+      const trunk = hubFlightsArray.find(h => h.dest === hubCode);
+      if (!trunk) return;
+
+      const connections = connFlightsRaw.filter(c => {
+        if (c.origin !== hubCode) return false;
+        const arrival = new Date(`${trunk.arr_date}T${trunk.arr_time}`);
         const departure = new Date(`${c.dep_date}T${c.dep_time}`);
-        return (departure - arrival) / 60000 >= 60; // 1 hour buffer
-      });
+        const layoverMins = (departure - arrival) / 60000;
+        return layoverMins >= 60 && layoverMins <= 1440; 
+      }).map(c => {
+        const arrival = new Date(`${trunk.arr_date}T${trunk.arr_time}`);
+        const departure = new Date(`${c.dep_date}T${c.dep_time}`);
+        return {
+          ...c,
+          lh: Math.round((departure - arrival) / 60000 / 6) / 10,
+          tdh: Math.round((trunk.duration_hrs + c.duration_hrs + ((departure - arrival) / 3600000)) * 10) / 10
+        };
+      }).slice(0, 4);
+
+      if (connections.length > 0) {
+        processedHubRoutes.push({ hubCode, trunk, connections });
+      }
     });
 
-    const liveFlights = {
-      direct_flights: directFlightsArray,
-      hub_flights: hubFlightsArray,
-      connections_from_hubs: optimizedConnections.slice(0, 80)
-    };
+    const liveFlights = { direct_flights: directFlightsArray, hub_routes: processedHubRoutes };
 
-    if (directFlightsArray.length === 0 && hubFlightsArray.length === 0) {
+    if (directFlightsArray.length === 0 && processedHubRoutes.length === 0) {
       await setDoc(doc(db, "research", userId), { results: JSON.stringify({ direct_flights: [], hub_routes: [] }), status: "complete" });
       return; 
     }
 
-   // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT (MINIFIED)
+    // 4. THE ZERO-TOLERANCE SONNET 4.6 PROMPT
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
     =========================================
-    CLEAN LIVE DATA: ${origin} ➔ ${cleanFinalStr}
+    FACTUAL FLIGHT DATA (NO MATH REQUIRED):
     =========================================
     ${JSON.stringify(liveFlights)}
     
-    CRITICAL RULES:
-    1. ZERO HALLUCINATIONS: Use ONLY provided flight numbers.
-    2. HUB STRATEGY: You are hitting token limits. Limit results to the TOP 8 HUB ROUTES total.
+    CRITICAL BEHAVIORAL RULES:
+    1. ZERO HALLUCINATIONS: Use ONLY the provided flight numbers from the data above.
+    2. HUB STRATEGY: Limit results to the TOP 8 HUB ROUTES from the data. 
     3. CONNECTION LIMIT: For each hub, list a MAXIMUM of 4 connection options.
-    4. NOTES: Write highly actionable 50-word notes for each route detailing standby strategy.
-    5. MINIFIED SCHEMA: You MUST use these exact keys. No double quotes (") in values. Use single quotes (').
+    4. ACTIONABLE ADVICE: Write standby strategy notes for 'n', 'h_n', and 'ln'. Keep them under 15 words. ONLY include a note if it provides value (e.g. 'Tight connection', 'High capacity aircraft'). Otherwise leave empty "".
+    5. DATA INTEGRITY: Do not calculate anything. Use provided dh/tdh/lh values exactly.
+    6. MINIFIED SCHEMA: Use these exact keys. Use single quotes (') for text; NEVER use double quotes (") inside values.
+
     {
       "df": [{ "al": "UA", "fn": "UA 837", "dd": "2026-04-10", "dt": "11:40", "ad": "2026-04-11", "at": "15:00", "air": "777", "or": "SFO", "de": "NRT", "dh": 11, "n": "Note." }],
       "hr": [{
         "hc": "ICN", "hn": "Seoul", "ov": true, "ac": false, "tdh": 24.5,
         "tf": { "al": "UA", "fn": "UA 893", "dd": "2026-04-10", "dt": "10:30", "ad": "2026-04-11", "at": "15:30", "air": "777", "de": "ICN", "or": "SFO" },
-        "cx": [{ "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 26.5, "ln": "Note." }],
-        "h_n": "Actionable advice here."
+        "cx": [{ "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 26.5, "ln": "" }],
+        "h_n": "Advice."
       }]
     }`;
 
@@ -199,7 +211,7 @@ exports.handler = async (event) => {
     if (!jsonMatch) throw new Error("No JSON found");
     const minData = JSON.parse(jsonMatch[0]);
     
-    // 5. EXPAND FOR FRONTEND
+    // 5. EXPAND FOR FRONTEND COMPATIBILITY
     const expandedData = {
       direct_flights: (minData.df || []).map(f => ({
         airline: f.al, flight_number: f.fn, departure_date: f.dd, departure_time: f.dt,
