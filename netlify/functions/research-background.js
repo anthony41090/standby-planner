@@ -204,7 +204,7 @@ exports.handler = async (event) => {
       return; 
     }
 
-    // 4. THE PROMPT
+    // 4. THE PROMPT (With absolute strict JSON safeguards)
     const nonStandbyAirlines = ["ZIPAIR", "PEACH", "SPRING", "AIRASIA", "CEBU PACIFIC", "SCOOT", "FRONTIER", "SPIRIT", "RYANAIR", "EASYJET"];
     
     const enhancedPrompt = prompt + `\n\n
@@ -218,12 +218,12 @@ exports.handler = async (event) => {
     2. HUB STRATEGY: Limit results to the TOP 8 HUB ROUTES. List a MAXIMUM of 4 connections per hub.
     3. ACTIONABLE ADVICE: Keep notes ('n', 'h_n', 'ln') under 15 words. ONLY include a note if it provides specific standby value.
     4. DATA INTEGRITY: Do not calculate anything. Use provided dh/tdh/lh values exactly.
-    5. STRICT JSON SYNTAX: You are strictly forbidden from using double quotes (") inside any text values. Use single quotes (') instead.
+    5. STRICT JSON SYNTAX: You MUST output perfectly valid JSON. Ensure every object in an array is separated by a comma. NEVER use double quotes (") or apostrophes (') INSIDE your text/note values (Keep notes purely alphanumeric).
     6. MINIFIED SCHEMA: Use the exact keys shown below. Do not add any other keys.
 
     {
       "df": [
-        { "al": "UA", "fn": "UA 837", "dd": "2026-04-10", "dt": "11:40", "ad": "2026-04-11", "at": "15:00", "air": "777", "or": "SFO", "de": "NRT", "dh": 11.5, "n": "Direct service." }
+        { "al": "UA", "fn": "UA 837", "dd": "2026-04-10", "dt": "11:40", "ad": "2026-04-11", "at": "15:00", "air": "777", "or": "SFO", "de": "NRT", "dh": 11.5, "n": "Direct service" }
       ],
       "hr": [
         {
@@ -234,9 +234,9 @@ exports.handler = async (event) => {
           "tdh": 24.5,
           "tf": { "al": "UA", "fn": "UA 893", "dd": "2026-04-10", "dt": "10:30", "ad": "2026-04-11", "at": "15:30", "air": "777", "de": "ICN", "or": "SFO" },
           "cx": [
-            { "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 3, "ln": "Connect via Seoul." }
+            { "al": "OZ", "fn": "OZ 102", "or": "ICN", "de": "NRT", "dd": "2026-04-12", "dt": "18:00", "ad": "2026-04-12", "at": "20:30", "lh": 3, "ln": "Connect via Seoul" }
           ],
-          "h_n": "Overnight required."
+          "h_n": "Overnight required"
         }
       ]
     }`;
@@ -250,7 +250,7 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6", 
-        max_tokens: 4000,
+        max_tokens: 8192, // Increased back to 8192 so it never truncates long arrays
         messages: [{ role: "user", content: enhancedPrompt }]
       })
     });
@@ -266,10 +266,9 @@ exports.handler = async (event) => {
     if (!jsonMatch) throw new Error("No JSON found in Claude response");
     
     // 🛡️ THE BULLETPROOF JSON CLEANER
-    // Automatically fixes LLM unescaped newline hallucinations and illegal trailing commas
     let cleanJson = jsonMatch[0]
-      .replace(/[\r\n]+/g, " ") // Converts text to a single line to neutralize mid-string line breaks
-      .replace(/,(\s*[}\]])/g, "$1"); // Deletes illegal trailing commas right before closing brackets
+      .replace(/[\r\n]+/g, " ") 
+      .replace(/,(\s*[}\]])/g, "$1"); 
     
     const minData = JSON.parse(cleanJson);
     
