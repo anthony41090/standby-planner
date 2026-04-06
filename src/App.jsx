@@ -1032,13 +1032,23 @@ function NewTrip({onCancel,onCreate}){
 
         <FG label="Travel Date">
           <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{
-              ...INP,
-              minHeight: 42,
-              flex:"1 1 160px",
-              minWidth:140,
-              cursor: "pointer"
-            }}/>
+            <input 
+              type="date" 
+              value={date} 
+              onChange={e=>setDate(e.target.value)} 
+              onClick={(e) => {
+                // SPRINT 3: Forces the native calendar to open when clicking anywhere in the box
+                if (e.target.showPicker) e.target.showPicker();
+              }}
+              style={{
+                ...INP,
+                minHeight: 42,
+                flex:"1 1 160px",
+                minWidth:140,
+                cursor: "pointer",
+                color: date ? "#111827" : "#64748b" // Grays out the mm/dd/yyyy placeholder
+              }}
+            />
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <div style={{fontSize:9,fontWeight:700,color:"#64748b",fontFamily:"monospace"}}>FLEX</div>
               <div style={{display:"flex",gap:4}}>
@@ -1612,7 +1622,15 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
         {editMode?(<div style={{display:"flex",flexDirection:"column",gap:8}}>
           <input value={editName} onChange={e=>setEditName(e.target.value)} style={{...INP,fontSize:16,fontWeight:700,maxWidth:300}} placeholder="Trip name"/>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...INP, width:160, minHeight:42}}/>
+            <input 
+              type="date" 
+              value={editDate} 
+              onChange={e=>setEditDate(e.target.value)} 
+              onClick={(e) => {
+                if (e.target.showPicker) e.target.showPicker();
+              }}
+              style={{...INP, width:160, minHeight:42, cursor:"pointer", color: editDate ? "#111827" : "#64748b"}}
+            />
             <select value={editCabin} onChange={e=>setEditCabin(e.target.value)} style={{...INP,width:130,appearance:"auto"}}><option value="J">Business (J)</option><option value="Y">Economy (Y)</option></select>
             <div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,color:"#64748b"}}>Pax:</span><input type="number" min="1" max="9" value={editTravelers} onChange={e=>setEditTravelers(e.target.value)} style={{...INP,width:50,textAlign:"center"}}/></div>
             <Btn onClick={saveEdit} accent>Save Changes</Btn><Btn onClick={()=>setEditMode(false)} dim>Cancel</Btn>
