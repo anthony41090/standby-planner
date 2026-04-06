@@ -897,6 +897,7 @@ export default function NonRevPlanner() {
   if (!loaded) return <Loading />;
   return (
     <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:"#f5f4f0",minHeight:"100vh",color:"#1f2937",overflowX:"hidden"}}>
+      <GlobalStyles />
       <Header screen={screen} goHome={goHome} goRules={()=>setScreen("rules")} onLogout={logout}/>
       <div style={{maxWidth:1140,margin:"0 auto",padding:"20px 16px"}}>
         {screen==="dashboard" && <Dashboard trips={trips} open={(id)=>go("tracker",id)} del={async(id)=>{const n={...trips};delete n[id];await save(n);if(curId===id)goHome();}} onNew={()=>go("new")}/>}
@@ -1614,7 +1615,7 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
         {editMode?(<div style={{display:"flex",flexDirection:"column",gap:8}}>
           <input value={editName} onChange={e=>setEditName(e.target.value)} style={{...INP,fontSize:16,fontWeight:700,maxWidth:300}} placeholder="Trip name"/>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-            <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...INP,width:160}}/>
+            <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...INP, width:160, minHeight:42}}/>
             <select value={editCabin} onChange={e=>setEditCabin(e.target.value)} style={{...INP,width:130,appearance:"auto"}}><option value="J">Business (J)</option><option value="Y">Economy (Y)</option></select>
             <div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,color:"#64748b"}}>Pax:</span><input type="number" min="1" max="9" value={editTravelers} onChange={e=>setEditTravelers(e.target.value)} style={{...INP,width:50,textAlign:"center"}}/></div>
             <Btn onClick={saveEdit} accent>Save Changes</Btn><Btn onClick={()=>setEditMode(false)} dim>Cancel</Btn>
@@ -1924,4 +1925,31 @@ function RI({label,text,extra,warn,footer,alert}){
     {extra&&<div style={{fontSize:10,color:"#2563eb",marginTop:3}}>{extra}</div>}
     {footer&&<div style={{fontSize:10,color:"#64748b",marginTop:4,fontStyle:"italic"}}>{footer}</div>}
   </div>);
+}
+// SPRINT 3: GLOBAL STYLES FOR NATIVE ELEMENTS
+function GlobalStyles() {
+  return (
+    <style>{`
+      /* Normalize Date Picker across Chrome/Safari */
+      input[type="date"]::-webkit-calendar-picker-indicator {
+        background: transparent;
+        bottom: 0;
+        color: transparent;
+        cursor: pointer;
+        height: auto;
+        left: 0;
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: auto;
+      }
+      input[type="date"] {
+        position: relative;
+      }
+      input[type="date"]::-webkit-datetime-edit {
+        position: relative;
+        z-index: 1;
+      }
+    `}</style>
+  );
 }
