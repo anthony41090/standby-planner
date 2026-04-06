@@ -1110,6 +1110,21 @@ function CitySearch({value,codes,placeholder,onChange}){
   const matches = useMemo(()=>{
     if(!text||text.length<1) return [];
     const q=text.toLowerCase();
+    
+    // SPRINT 3: EXACT IATA CODE PRIORITY
+    const exactCode = text.toUpperCase().trim();
+    if (exactCode.length === 3) {
+      const exactMatch = CITY_AIRPORTS.find(c => c.codes.includes(exactCode));
+      if (exactMatch) {
+        // Return only the exact match, but reorder the codes array so the typed code is first
+        const reorderedMatch = {
+          ...exactMatch,
+          codes: [exactCode, ...exactMatch.codes.filter(c => c !== exactCode)]
+        };
+        return [reorderedMatch];
+      }
+    }
+
     const results=[];
     CITY_AIRPORTS.forEach(c=>{
       if(c.city.toLowerCase().includes(q)||c.codes.some(code=>code.toLowerCase().includes(q))||c.country.toLowerCase().includes(q))
