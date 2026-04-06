@@ -1550,7 +1550,7 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
     const now=Date.now();
     setUd(p=>({...p,[k]:{...(p[k]||{}),[f]:v,...(f==="openSeats"||f==="listedStandby"?{[`${f}_at`]:now}:{})}}));
   };
-  const doSave=async()=>{await onUpdate({userData:ud});setSave("");setTimeout(()=>setSave(""),2000);};
+  const doSave=async()=>{await onUpdate({userData:ud});setSave(" Saved");setTimeout(()=>setSave(""),2000);};
   const saveEdit=async()=>{
     await onUpdate({name:editName,travelDate:editDate,cabin:editCabin,travelers:parseInt(editTravelers)||1});
     setEditMode(false);setSave(" Updated");setTimeout(()=>setSave(""),2000);
