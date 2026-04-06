@@ -1649,11 +1649,32 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
         </div>
       </div>
     )}
+    {/* SPRINT 3: TOTAL EMPTY STATE */}
+    {routes.length === 0 && !editMode && (
+      <div style={{textAlign:"center",padding:"60px 20px",background:"#fff",borderRadius:16,border:"1px dashed #cbd5e1",marginTop:20}}>
+        <div style={{fontSize:40,marginBottom:16}}>📭</div>
+        <h3 style={{fontSize:18,fontWeight:800,color:"#1e293b",margin:"0 0 8px"}}>No routes found</h3>
+        <p style={{fontSize:13,color:"#64748b",maxWidth:400,margin:"0 auto 24px",lineHeight:1.5}}>
+          We couldn't find any viable standby routes for this search. This usually happens if the route requires more than 2 stops, or the selected trunk airline doesn't operate in this region.
+        </p>
+        <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+          <Btn onClick={()=>setEditMode(true)} accent>Edit Search</Btn>
+          <Btn onClick={goHome} dim>Back to Dashboard</Btn>
+        </div>
+      </div>
+    )}
     <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
       {[{v:"all",l:"All"},{v:"priority",l:" Priority"},{v:"good",l:" Good+"},{v:"backup",l:" Backup+"}].map(f=>(<Btn key={f.v} onClick={()=>setFilter(f.v)} active={filter===f.v}>{f.l}</Btn>))}
       <span style={{fontSize:10,color:"#64748b",fontFamily:"monospace",marginLeft:6}}>{filtered.length}/{routes.length}</span>
     </div>
-    {filtered.length===0?(<div style={{textAlign:"center",padding:"40px",background:"#fff",borderRadius:12,border:"1px solid #e5e7eb"}}><div style={{color:"#475569"}}>No routes match filter.</div></div>):(
+    {/* SPRINT 3: FILTER EMPTY STATE */}
+    {filtered.length === 0 && routes.length > 0 ? (
+      <div style={{textAlign:"center",padding:"40px 20px",background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"#334155",marginBottom:8}}>No routes match this filter</div>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>Try adjusting your tier filter to see more options.</div>
+        <Btn onClick={()=>setFilter("all")} accent>Clear Filters</Btn>
+      </div>
+    ) : (
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         {filtered.map((r,ri)=>{
           const tm=TIER_META[r.tier];
