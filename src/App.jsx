@@ -897,7 +897,6 @@ export default function NonRevPlanner() {
   if (!loaded) return <Loading />;
   return (
     <div style={{fontFamily:"'DM Sans',system-ui,sans-serif",background:"#f5f4f0",minHeight:"100vh",color:"#1f2937",overflowX:"hidden"}}>
-      <GlobalStyles />
       <Header screen={screen} goHome={goHome} goRules={()=>setScreen("rules")} onLogout={logout}/>
       <div style={{maxWidth:1140,margin:"0 auto",padding:"20px 16px"}}>
         {screen==="dashboard" && <Dashboard trips={trips} open={(id)=>go("tracker",id)} del={async(id)=>{const n={...trips};delete n[id];await save(n);if(curId===id)goHome();}} onNew={()=>go("new")}/>}
@@ -1032,27 +1031,25 @@ function NewTrip({onCancel,onCreate}){
         </div>
 
         <FG label="Travel Date">
-          <div style={{display:"flex",gap:8,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
             <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{
               ...INP,
-              WebkitAppearance: "auto",
-              appearance: "auto",
-              paddingRight: 12,
               minHeight: 42,
               flex:"1 1 160px",
-              minWidth:140
+              minWidth:140,
+              cursor: "pointer"
             }}/>
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
               <div style={{fontSize:9,fontWeight:700,color:"#64748b",fontFamily:"monospace"}}>FLEX</div>
               <div style={{display:"flex",gap:4}}>
                 {[{v:0,l:"Exact"},{v:1,l:"±1"},{v:2,l:"±2"},{v:3,l:"±3"}].map(f=>(
-                  <button key={f.v} onClick={()=>setFlexDays(f.v)} style={{fontSize:11,padding:"6px 10px",borderRadius:6,border:"1.5px solid "+(flexDays===f.v?"#2563eb":"#d4d4d8"),background:flexDays===f.v?"#eff6ff":"#fff",color:flexDays===f.v?"#2563eb":"#475569",cursor:"pointer",fontWeight:flexDays===f.v?700:400}}>{f.l}</button>
+                  <button key={f.v} onClick={()=>setFlexDays(f.v)} style={{fontSize:11,padding:"10px 12px",borderRadius:6,border:"1.5px solid "+(flexDays===f.v?"#2563eb":"#d4d4d8"),background:flexDays===f.v?"#eff6ff":"#fff",color:flexDays===f.v?"#2563eb":"#475569",cursor:"pointer",fontWeight:flexDays===f.v?700:400}}>{f.l}</button>
                 ))}
               </div>
             </div>
           </div>
           {date && flexDays > 0 && (
-            <div style={{fontSize:10,color:"#64748b",marginTop:6}}>
+            <div style={{fontSize:10,color:"#64748b",marginTop:8}}>
               Searching {(() => {
                 const d = new Date(date + "T00:00:00");
                 const start = new Date(d); start.setDate(start.getDate() - flexDays);
@@ -1925,31 +1922,4 @@ function RI({label,text,extra,warn,footer,alert}){
     {extra&&<div style={{fontSize:10,color:"#2563eb",marginTop:3}}>{extra}</div>}
     {footer&&<div style={{fontSize:10,color:"#64748b",marginTop:4,fontStyle:"italic"}}>{footer}</div>}
   </div>);
-}
-// SPRINT 3: GLOBAL STYLES FOR NATIVE ELEMENTS
-function GlobalStyles() {
-  return (
-    <style>{`
-      /* Normalize Date Picker across Chrome/Safari */
-      input[type="date"]::-webkit-calendar-picker-indicator {
-        background: transparent;
-        bottom: 0;
-        color: transparent;
-        cursor: pointer;
-        height: auto;
-        left: 0;
-        position: absolute;
-        right: 0;
-        top: 0;
-        width: auto;
-      }
-      input[type="date"] {
-        position: relative;
-      }
-      input[type="date"]::-webkit-datetime-edit {
-        position: relative;
-        z-index: 1;
-      }
-    `}</style>
-  );
 }
