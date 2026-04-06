@@ -1504,7 +1504,21 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
   const [addingRoute,setAddingRoute]=useState(false);
   const [confirmDel,setConfirmDel]=useState(null);
   const routes=trip.routes||[];
+  // SPRINT 3: UI STABILITY (Snapshot Sorting)
+  const [udSnapshot, setUdSnapshot] = useState(trip.userData || {});
+  
+  // Capture a snapshot of the seat data on initial load or when routes are added/deleted
+  useEffect(() => {
+    setUdSnapshot(ud);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes.length]); 
 
+  // Allow the user to manually trigger a re-sort when they finish typing
+  const handleManualResort = () => {
+    setUdSnapshot(ud);
+    setSave("Cards re-sorted!");
+    setTimeout(()=>setSave(""), 2000);
+  };
   const [editName,setEditName]=useState(trip.name||"");
   const [editDate,setEditDate]=useState(trip.travelDate||"");
   const [editCabin,setEditCabin]=useState(trip.cabin||"J");
@@ -1555,18 +1569,28 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
 
   const getOpen=useCallback((rid,def)=>{const v=ud[rid]?.openSeats;if(v!==undefined&&v!==null&&v!==""){const n=parseInt(v,10);return isNaN(n)?def:Math.max(0,n);}return def;},[ud]);
   const getListed=useCallback((rid)=>{const v=ud[rid]?.listedStandby;return(v!==undefined&&v!==null)?v:"";},[ud]);
+  // SPRINT 3: Snapshot versions for stable sorting
+  const getSnapOpen=useCallback((rid,def)=>{const v=udSnapshot[rid]?.openSeats;if(v!==undefined&&v!==null&&v!==""){const n=parseInt(v,10);return isNaN(n)?def:Math.max(0,n);}return def;},[udSnapshot]);
+  const getSnapListed=useCallback((rid)=>{const v=udSnapshot[rid]?.listedStandby;return(v!==undefined&&v!==null)?v:"";},[udSnapshot]);
   const enriched=useMemo(()=>{
     return routes.map(r=>{
+      // LIVE DATA (Drives the instant UI color/badge updates)
       const open=getOpen(r.id,r.defaultJ);const listed=getListed(r.id);
       const rem=getRemaining(open,listed);const tier=calcTier(r.isDirect,r.isLate,rem,open);
-      return {...r,open,listed,remaining:rem,tier};
+      
+      // SNAPSHOT DATA (Drives the physical sorting position)
+      const sOpen=getSnapOpen(r.id,r.defaultJ);const sListed=getSnapListed(r.id);
+      const sRem=getRemaining(sOpen,sListed);const sTier=calcTier(r.isDirect,r.isLate,sRem,sOpen);
+      
+      return {...r,open,listed,remaining:rem,tier, sOpen, sRem, sTier};
     }).sort((a,b)=>{
-      if(a.tier!==b.tier)return a.tier-b.tier;
+      // Sort strictly using the stable snapshot values
+      if(a.sTier!==b.sTier)return a.sTier-b.sTier;
       if(a.isDirect!==b.isDirect)return a.isDirect?-1:1;
       if((a.isHome||false)!==(b.isHome||false))return a.isHome?-1:1;
-      return(b.remaining??b.open)-(a.remaining??a.open);
+      return(b.sRem??b.sOpen)-(a.sRem??a.sOpen);
     });
-  },[routes,getOpen,getListed]);
+  },[routes,getOpen,getListed,getSnapOpen,getSnapListed]);
   const filtered=filter==="all"?enriched:enriched.filter(r=>{
     if(filter==="priority")return r.tier===1;if(filter==="good")return r.tier<=2;return r.tier<=3;
   });
@@ -1680,6 +1704,10 @@ function Tracker({trip,onUpdate,onReSearch,goHome}){
     )}
     <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
       {[{v:"all",l:"All"},{v:"priority",l:" Priority"},{v:"good",l:" Good+"},{v:"backup",l:" Backup+"}].map(f=>(<Btn key={f.v} onClick={()=>setFilter(f.v)} active={filter===f.v}>{f.l}</Btn>))}
+      
+      {/* SPRINT 3: MANUAL RE-SORT BUTTON */}
+      <Btn onClick={handleManualResort} dim>🔄 Re-sort</Btn>
+      
       <span style={{fontSize:10,color:"#64748b",fontFamily:"monospace",marginLeft:6}}>{filtered.length}/{routes.length}</span>
     </div>
     {/* SPRINT 3: FILTER EMPTY STATE */}
