@@ -1175,8 +1175,28 @@ function Research({trip,onDone,onSkip}){
   const [status,setStatus]=useState("idle");
   const [log,setLog]=useState([]);
   const [error,setError]=useState(null);
+  const [msgIdx, setMsgIdx]=useState(0);
   const started=useRef(false);
   const addLog=(msg)=>setLog(p=>[...p,{t:Date.now(),msg}]);
+
+  // V1.3 Sprint 3: Rotating loading messages to keep user engaged
+  const loadingMessages = [
+    "Searching across partner airlines…",
+    "Checking widebody aircraft availability…",
+    "Calculating minimum connection times…",
+    "Validating ZED/MIBA agreements…",
+    "Optimizing for standby priority…",
+    "Almost there, finalizing routes…"
+  ];
+
+  useEffect(()=>{
+    if(status==="searching") {
+      const int = setInterval(() => {
+        setMsgIdx(p => Math.min(p + 1, loadingMessages.length - 1));
+      }, 8000);
+      return () => clearInterval(int);
+    }
+  }, [status]);
 
   useEffect(()=>{if(!started.current){started.current=true;run();}}, []);
 
@@ -1267,7 +1287,6 @@ function Research({trip,onDone,onSkip}){
       });
       addLog("Database reset. Triggering fresh research...");
 
-      // DYNAMIC PROMPT (V1.2 Upgrade: Unbiased & Dynamic)
       const prompt = `You are a travel assistant routing non-rev standby flights.
       RULES:
       1. ORIGIN: Depart from ${originCode.split(",").join(" or ")}.
@@ -1284,7 +1303,7 @@ function Research({trip,onDone,onSkip}){
           finalDestination: searchCode,
           hubs: dynamicHubs,
           date: trip.travelDate,
-          trunkFilter: trip.trunkAirline === "all" ? null : trip.trunkAirline, // <--- THE FIX
+          trunkFilter: trip.trunkAirline === "all" ? null : trip.trunkAirline,
           cabin: trip.cabin
         })
       });
@@ -1394,8 +1413,8 @@ function Research({trip,onDone,onSkip}){
   }
 
   return(
-    <div style={{maxWidth:480,margin:"40px auto",textAlign:"center"}}>
-      <div style={{background:"#ffffff",border:"1px solid #e5e7eb",borderRadius:16,padding:"48px 32px"}}>
+    <div style={{maxWidth:520,margin:"40px auto",textAlign:"center"}}>
+      <div style={{background:"#ffffff",border:"1px solid #e5e7eb",borderRadius:16,padding:"40px 32px"}}>
         {status==="error" ? (<>
           <div style={{fontSize:16,fontWeight:700,color:"#dc2626",marginBottom:6}}>Research Failed</div>
           <div style={{fontSize:12,color:"#64748b",marginBottom:20}}>{error}</div>
@@ -1407,23 +1426,53 @@ function Research({trip,onDone,onSkip}){
           <div style={{fontSize:16,fontWeight:700,color:"#059669"}}>Routes Found</div>
           <div style={{fontSize:12,color:"#64748b",marginTop:4}}>Loading tracker…</div>
         </>) : (<>
-          <div style={{marginBottom:24}}>
-            <div style={{display:"inline-block",width:48,height:48,border:"3px solid #e5e7eb",borderTopColor:"#2563eb",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
-          </div>
-          <div style={{fontSize:18,fontWeight:800,color:"#111827",marginBottom:6}}>
+          
+          <div style={{fontSize:20,fontWeight:900,color:"#111827",marginBottom:8}}>
             {trip.origin} {"->"} {trip.destination}
           </div>
-          <div style={{fontSize:13,color:"#475569",marginBottom:16}}>
-            {status==="parsing" ? "Parsing flight data…" : "Searching across partner airlines…"}
+          <div style={{fontSize:14,color:"#2563eb",fontWeight:600,marginBottom:20, height:20, transition:"all 0.3s"}}>
+            {status==="parsing" ? "Parsing flight data…" : loadingMessages[msgIdx]}
           </div>
-          <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
+
+          <div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap",marginBottom:32}}>
             {[trip.cabin==="J"?"Business class":"Economy",trip.trunkAirline?AGREEMENTS[trip.trunkAirline]?.name:"All carriers",trip.travelDate||"Flexible"].map((tag,i)=>(
-              <span key={i} style={{fontSize:10,padding:"4px 10px",borderRadius:99,background:"#f3f4f6",color:"#475569"}}>{tag}</span>
+              <span key={i} style={{fontSize:11,padding:"4px 12px",borderRadius:99,background:"#f3f4f6",color:"#475569",fontWeight:500}}>{tag}</span>
             ))}
           </div>
+
+          {/* SPRINT 3: SHIMMERING SKELETON CARDS */}
+          <div style={{display:"flex",flexDirection:"column",gap:12,textAlign:"left"}}>
+            {[1,2,3].map(i => (
+              <div key={i} style={{
+                background:"#fff", border:"1px solid #f1f5f9", borderRadius:12, padding:"16px",
+                boxShadow:"0 1px 2px rgba(0,0,0,0.02)",
+                animation: `pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite`,
+                animationDelay: `${i * 0.2}s`
+              }}>
+                <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+                  <div style={{width:36, height:36, borderRadius:8, background:"#f1f5f9"}} />
+                  <div style={{flex:1}}>
+                    <div style={{width:"35%", height:12, borderRadius:4, background:"#f1f5f9", marginBottom:8}} />
+                    <div style={{width:"55%", height:10, borderRadius:4, background:"#f1f5f9"}} />
+                  </div>
+                </div>
+                <div style={{display:"flex", gap:8}}>
+                   <div style={{flex:1, height:28, borderRadius:6, background:"#f8fafc"}} />
+                   <div style={{flex:1, height:28, borderRadius:6, background:"#f8fafc"}} />
+                   <div style={{flex:1, height:28, borderRadius:6, background:"#f8fafc"}} />
+                </div>
+              </div>
+            ))}
+          </div>
+
         </>)}
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   );
 }
